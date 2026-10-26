@@ -666,21 +666,101 @@ def _finish_difflint(job: Optional[_DiffLintJob]) -> None:
         Step.warn(f"ML diff-lint: {type(exc).__name__}: {exc}")
 
 
-def _check_tests_and_audit(py: str) -> bool:
-    # Parallel (pytest-xdist) with a coverage floor (pyproject.toml's
-    # [tool.coverage.report] fail_under) when the dev requirements are
-    # installed; otherwise the plain serial run, exactly as before.
-    extra: list[str] = []
-    has_dev, _ = _run([py, "-c", "import xdist, pytest_cov"])
-    if has_dev:
-        # --max-worker-restart=0: a worker that dies (a native crash) ends the run at once, naming the test it was
-        # running, instead of the session waiting out PYTEST_TIMEOUT for a replacement that never finishes.
-        extra = ["-n", "auto", "--dist", "loadgroup", "--max-worker-restart=0",
-                 "--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+# The tests this run selects (bot/conductor/testselect.py) and whether a full run is owed anyway (set by _run_pipeline_body).
+_CHANGED: Optional[set[str]] = None
+_FULL_SUITE_REQUIRED = ""          # non-empty (the reason) when this run deploys: the whole suite always runs before a deploy
+TEST_SELECT = os.environ.get("ABP_PIPELINE_TEST_SELECT", "1") != "0"
+QUICK_GATE = os.environ.get("ABP_PIPELINE_QUICK_GATE", "1") != "0"
+TESTSELECT_STATE = ROOT / "logs" / "local_pipeline" / "testselect_state.json"
+
+
+def _test_plan():
+    """(selection, run_quick_gate, run_full): what pytest runs this time, reported with the reasons."""
+    from bot.conductor import testselect
+
+    every_runs, every_hours = testselect.schedule_settings()
+    state = testselect.ScheduleState.load(TESTSELECT_STATE)
+    if not TEST_SELECT:
+        sel = testselect.Selection(True, ["test selection is off (ABP_PIPELINE_TEST_SELECT=0)"])
     else:
+        try:
+            sel = testselect.select(ROOT, _CHANGED, schedule=state, every_runs=every_runs, every_hours=every_hours)
+        except Exception as exc:  # noqa: BLE001 - a selector bug must never shrink the gate: run everything
+            sel = testselect.Selection(True, [f"the selector failed ({type(exc).__name__}: {exc})"])
+    full = sel.full or bool(_FULL_SUITE_REQUIRED)
+    quick = QUICK_GATE and not sel.full and bool(sel.tests) and bool(_FULL_SUITE_REQUIRED)
+    for line in sel.report_lines():
+        Step.doing("test selection: " + line)
+    if _FULL_SUITE_REQUIRED and not sel.full:
+        Step.doing(f"full suite anyway: {_FULL_SUITE_REQUIRED}" + (" (the selected tests run first as a quick gate)" if quick else ""))
+    reason = "; ".join(sel.reasons) or _FULL_SUITE_REQUIRED or sel.summary()
+    _RUN.decision(actor="rules", decision="run the full test suite" if full else f"run {len(sel.tests)} selected test file(s)",
+                  reason=reason, rule="test_selection",
+                  inputs={"changed": len(sel.changed), "selected": len(sel.tests), "total": sel.total_tests, "quick_gate": quick,
+                          "seconds": round(sel.seconds, 2)})
+    try:
+        log_dir = ROOT / "logs" / "local_pipeline"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / f"{datetime.datetime.now():%Y%m%d-%H%M%S}-testselect.json").write_text(
+            json.dumps({**sel.to_dict(), "full_required": _FULL_SUITE_REQUIRED, "quick_gate": quick, "ran_full": full}, indent=2),
+            encoding="utf-8")
+    except OSError:
+        pass
+    return sel, quick, full, state
+
+
+def _check_tests_and_audit(py: str) -> bool:
+    sel, quick, full, state = _test_plan()
+    has_dev, _ = _run([py, "-c", "import xdist, pytest_cov"])
+    if not has_dev:
         Step.warn("pytest-xdist/pytest-cov not installed — serial run without the coverage floor "
                   "(pip install -r requirements-dev.txt)")
-    ok, out = _run([py, "-m", "pytest", "-q", "-rfE", *extra], cwd=ROOT, timeout=PYTEST_TIMEOUT)
+    if quick and not _pytest_stage(py, sel.tests, has_dev, coverage=False, label="quick gate (selected tests)"):
+        return False
+    if full:
+        ok = _pytest_stage(py, [], has_dev, coverage=True, label="full suite")
+        state.record(TESTSELECT_STATE, full=True, passed=ok)
+        if not ok:
+            return False
+    elif sel.tests:
+        ok = _pytest_stage(py, sel.tests, has_dev, coverage=False, label=f"{len(sel.tests)} selected test file(s)")
+        state.record(TESTSELECT_STATE, full=False, passed=ok)
+        if not ok:
+            return False
+    else:
+        Step.skip("pytest: no test is affected by this change (and no deploy follows)")
+        state.record(TESTSELECT_STATE, full=False, passed=True)
+
+    lock = ROOT / "requirements.lock"
+    target = lock if lock.is_file() else ROOT / "requirements.txt"
+    ok, out = _run([py, "-m", "pip_audit", "-r", str(target), "--strict", "--disable-pip", "--no-deps"])
+    if not ok:
+        Step.err("pip-audit found a vulnerability:\n" + out)
+        return False
+    Step.ok("no known vulnerabilities")
+    return True
+
+
+def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool, label: str) -> bool:
+    """One pytest run (the whole suite when `targets` is empty) with the self-healing flaky re-run.
+
+    pytest-xdist workers are capped (testselect.worker_count: half the CPUs, at most 8, ABP_PYTEST_MAX_WORKERS overrides) - the
+    owner's CPU has had machine-check crashes under long all-core load, so `-n auto` is not used. The coverage floor applies only
+    to the whole suite (a subset can never meet it)."""
+    from bot.conductor import testselect
+
+    extra: list[str] = []
+    workers = testselect.worker_count(len(targets) if targets else None) if has_dev else 0
+    if workers:
+        # --max-worker-restart=0: a worker that dies (a native crash) ends the run at once, naming the test it was
+        # running, instead of the session waiting out PYTEST_TIMEOUT for a replacement that never finishes.
+        extra = ["-n", str(workers), "--dist", "loadgroup", "--max-worker-restart=0"]
+    elif has_dev:
+        extra = ["-p", "no:xdist"]
+    if coverage and has_dev:
+        extra += ["--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+    Step.doing(f"pytest ({label}): " + (f"{workers} worker(s)" if workers else "serial"))
+    ok, out = _run([py, "-m", "pytest", "-q", "-rfE", *extra, *targets], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     _keep_pytest_output(out)
     if not ok:
         # A test that fails once and passes alone is a flake (a busy port, a
@@ -719,15 +799,7 @@ def _check_tests_and_audit(py: str) -> bool:
         else:
             Step.err("pytest failed" + (": " + ", ".join(failed_ids[:40]) if failed_ids else "") + "\n" + out[-4000:])
             return False
-    Step.ok(out.strip().splitlines()[-1] if out.strip() else "tests passed")
-
-    lock = ROOT / "requirements.lock"
-    target = lock if lock.is_file() else ROOT / "requirements.txt"
-    ok, out = _run([py, "-m", "pip_audit", "-r", str(target), "--strict", "--disable-pip", "--no-deps"])
-    if not ok:
-        Step.err("pip-audit found a vulnerability:\n" + out)
-        return False
-    Step.ok("no known vulnerabilities")
+    Step.ok(f"{label}: " + (out.strip().splitlines()[-1] if out.strip() else "tests passed"))
     return True
 
 
@@ -1165,6 +1237,11 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
             if not deploy_needed:
                 Step.skip("no bot/config/desktop-app changes — nothing new for a "
                           "stop/rebuild/restart cycle to pick up, skipping it entirely")
+
+        global _CHANGED, _FULL_SUITE_REQUIRED
+        _CHANGED = changed
+        if deploy_needed and not args.no_deploy:
+            _FULL_SUITE_REQUIRED = "this run deploys, and every deploy runs the whole suite first"
 
         running_pid = find_running_instance() if deploy_needed else None
         was_running = running_pid is not None

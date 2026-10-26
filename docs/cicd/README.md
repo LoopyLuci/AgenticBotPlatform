@@ -210,6 +210,54 @@ Diagnostics written to `logs/local_pipeline/`:
 > do **not** weaken a real assertion to get a green push. Environment-coupled tests (a test that assumes a
 > local server is **off**) should be made backend-agnostic instead — see `test_ai_run_reaches_the_real_inference_route`.
 
+### Test selection and capped workers (Local Factory LF6)
+
+The pipeline no longer runs the whole suite on every push. `bot/conductor/testselect.py` picks the tests a change
+can affect, and the pipeline runs only those, unless the selector is unsure or a deploy follows.
+
+How tests are picked for the changed files (the push range):
+
+- **Import graph.** Every `.py` file under `bot/`, `scripts/`, `tests/`, `abp_*/` and the repo root is parsed with
+  `ast`. No import is executed. A test is selected when it imports a changed module, at most `MAX_DEPTH` (3) imports
+  away, parent packages included. String literals that name a module (`"bot.x.y"`) or a script (`"release_guard.py"`)
+  count as imports. The walk does not pass through an aggregator, meaning a file that imports more than `HUB_DEPS`
+  (20) others, such as `bot/hotreload.py` or the dashboard app. ABP's full import closure reaches nearly every
+  test, so this cut-off is deliberate.
+- **Coverage.** When `.coverage` has per-test contexts (`pytest --cov-context=test`), the tests that executed a
+  changed file are added. Coverage only adds tests and never removes one.
+- **Non-Python files** select the tests that name their path or (distinctive) file name, plus the direct importers
+  of the modules that name it. Docs, images and Rust/Kotlin sources that no test names select nothing, because the
+  Rust, Android and native gates own those files.
+
+**The whole suite runs instead when:**
+
+- this run deploys (`push == deploy`): every deploy is preceded by the full suite with the coverage floor. When
+  the selection is small, the selected tests run first as a quick gate that fails fast
+  (`ABP_PIPELINE_QUICK_GATE=0` turns that off);
+- test infrastructure changed: any `conftest.py`, `pytest.ini`, `pyproject.toml`, `setup.cfg`, `requirements*`,
+  `tests/fixtures/`, `tests/data/` or `config/`;
+- a file type the selector does not understand changed and no test names it, or a Python file outside the indexed
+  roots, or a root-level file;
+- the change set is unknown, or the selection would be more than 60% of the test files anyway;
+- the selector itself crashes (the gate never shrinks because of a bug);
+- it is due on the schedule: after `ABP_TESTSELECT_FULL_EVERY_RUNS` selected runs (default 10) or
+  `ABP_TESTSELECT_FULL_EVERY_HOURS` (default 24), or when there is no passing full run on record yet. The state is
+  kept in `logs/local_pipeline/testselect_state.json`, and only a full run that passed resets it;
+- `ABP_PIPELINE_TEST_SELECT=0` is set.
+
+**Reporting.** The run prints the selection (`N of M test files selected`), lists each test with the changed file
+that selected it, and gives the reason for any full run. It journals a `test_selection` decision and writes
+`logs/local_pipeline/<ts>-testselect.json`. A selected run skips the coverage floor, because a subset can never
+meet it.
+
+**Workers.** `-n auto` (every core) is gone. The CPU has had machine-check crashes under long all-core load. The
+suite gets at most half the logical CPUs, capped at 8; `ABP_PYTEST_MAX_WORKERS` overrides this, and 0 means serial.
+A selection of 3 files or fewer runs serially, and a larger one gets about one worker per 3 files.
+
+Factory workers use the same selector. The conductor's integrator runs codeintel's `impact` tests together with
+`testselect`'s selection before its full suite, and `python -m bot.conductor.testselect [--run]` prints (or runs)
+the selection for the working tree against `origin/main`.
+
 ### Pushing without GitHub dropping the connection (verified-commit stamp)
 
 git opens the SSH connection to GitHub **before** the pre-push hook runs, and the ~25-minute pipeline leaves

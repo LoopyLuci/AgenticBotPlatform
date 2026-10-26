@@ -249,18 +249,31 @@ class Integrator:
             rec.status, rec.note = "red", f"the machine is busy with another run: {exc}"[:300]
 
     def related_test_files(self, wt: Path) -> tuple[list[str], str]:
-        """(test files, why-not) the diff base..HEAD affects, from codeintel's impact on the changed lines."""
+        """(test files, why-not) the diff base..HEAD affects: codeintel's impact on the changed lines, plus the import-graph and
+        coverage selection (testselect). When testselect is unsure it says so and only impact's tests run first."""
         diff = _git(wt, "diff", "-U0", "--no-color", "--no-ext-diff", self.base, "HEAD", check=False).stdout
         if not diff.strip():
             return [], "no diff"
+        tests: set[str] = set()
+        notes: list[str] = []
         try:
             from bot.codeintel import tools
 
-            data = tools.impact(wt, diff, max_tokens=4000).data or {}
-        except Exception as exc:  # noqa: BLE001 - no index: just run the full suite
-            return [], f"impact unavailable ({type(exc).__name__})"
-        tests = [t for t in data.get("tests", []) if (wt / t).is_file()]
-        return tests, "" if tests else "no related tests found"
+            tests |= set((tools.impact(wt, diff, max_tokens=4000).data or {}).get("tests", []))
+        except Exception as exc:  # noqa: BLE001 - no index: testselect alone
+            notes.append(f"impact unavailable ({type(exc).__name__})")
+        try:
+            from bot.conductor import testselect
+
+            names = _git(wt, "diff", "--name-only", self.base, "HEAD", check=False).stdout.split()
+            sel = testselect.select(wt, names)
+            if sel.full:
+                notes.append("testselect: " + "; ".join(sel.reasons))
+            tests |= set(sel.tests)
+        except Exception as exc:  # noqa: BLE001 - the full suite runs afterwards regardless
+            notes.append(f"testselect unavailable ({type(exc).__name__})")
+        found = sorted(t for t in tests if (wt / t).is_file())
+        return found, "" if found else ("; ".join(notes) or "no related tests found")
 
     def _selective(self, rec: Integration, wt: Path, tree: str) -> None:
         """Run the tests the merge affects first; recorded in rec.selective. The full suite still runs afterwards as the final gate."""

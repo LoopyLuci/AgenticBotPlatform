@@ -28,6 +28,14 @@ def _no_difflint(monkeypatch):
     monkeypatch.setenv("ABP_PIPELINE_DIFFLINT", "0")
 
 
+@pytest.fixture(autouse=True)
+def _testselect_state(monkeypatch, tmp_path):
+    """Test selection's schedule state stays out of the real logs/; no change set = the whole suite, as before selection."""
+    monkeypatch.setattr(lp, "TESTSELECT_STATE", tmp_path / "testselect_state.json")
+    monkeypatch.setattr(lp, "_CHANGED", None)
+    monkeypatch.setattr(lp, "_FULL_SUITE_REQUIRED", "")
+
+
 def _script_runs(monkeypatch, outcomes):
     """Feeds check_python() a scripted sequence of (ok, output) per command."""
     calls = []
@@ -377,3 +385,79 @@ def test_a_diff_lint_that_starts_its_own_hub_does_not_hold_up_pytest(monkeypatch
     monkeypatch.setattr(lp, "_keep_pytest_output", lambda out: None)
     assert lp.check_python() is True
     assert at_pytest and at_pytest[0] == [] and done == [1]
+
+
+# ----------------------------------------------------------------------------- test selection (LF6)
+def _fresh_full_run(monkeypatch):
+    """A passing full run on record, so the schedule does not force one."""
+    from bot.conductor import testselect
+    testselect.ScheduleState().record(lp.TESTSELECT_STATE, full=True, passed=True)
+
+
+def _plan_calls(monkeypatch, changed, deploy):
+    monkeypatch.setattr(lp, "_CHANGED", set(changed))
+    monkeypatch.setattr(lp, "_FULL_SUITE_REQUIRED", "this run deploys" if deploy else "")
+    _fresh_full_run(monkeypatch)
+    return _script_runs(monkeypatch, [(True, "1 passed in 0.1s")])
+
+
+def _pytests(calls):
+    return [c for c in calls if c[1:3] == ["-m", "pytest"]]
+
+
+def test_a_non_deploy_change_runs_only_its_selected_tests_without_the_coverage_floor(monkeypatch, capsys):
+    calls = _plan_calls(monkeypatch, ["bot/conductor/shards.py"], deploy=False)
+    assert lp.check_python() is True
+    runs = _pytests(calls)
+    assert len(runs) == 1
+    assert "tests/test_conductor.py" in runs[0] and "--cov=bot" not in runs[0]
+    assert "auto" not in runs[0]
+    out = capsys.readouterr().out
+    assert "test selection:" in out and "selected" in out
+
+
+def test_a_deploy_always_runs_the_whole_suite_after_a_quick_gate(monkeypatch, capsys):
+    calls = _plan_calls(monkeypatch, ["bot/conductor/shards.py"], deploy=True)
+    assert lp.check_python() is True
+    quick, full = _pytests(calls)
+    assert "tests/test_conductor.py" in quick and "--cov=bot" not in quick
+    assert not any(a.startswith("tests/") for a in full) and "--cov=bot" in full
+    assert "auto" not in full
+    assert "full suite anyway" in capsys.readouterr().out
+
+
+def test_a_failing_quick_gate_stops_before_the_full_suite(monkeypatch):
+    monkeypatch.setattr(lp, "_CHANGED", {"bot/conductor/shards.py"})
+    monkeypatch.setattr(lp, "_FULL_SUITE_REQUIRED", "this run deploys")
+    _fresh_full_run(monkeypatch)
+    calls = _script_runs(monkeypatch, [(True, ""), (True, ""), (True, ""), (False, "E   SyntaxError: bad")])
+    assert lp.check_python() is False
+    assert len(_pytests(calls)) == 1
+
+
+def test_a_selector_crash_runs_the_whole_suite(monkeypatch):
+    from bot.conductor import testselect
+
+    def boom(*a, **k):
+        raise RuntimeError("bug")
+    monkeypatch.setattr(testselect, "select", boom)
+    calls = _plan_calls(monkeypatch, ["bot/conductor/shards.py"], deploy=False)
+    assert lp.check_python() is True
+    (full,) = _pytests(calls)
+    assert "--cov=bot" in full and not any(a.startswith("tests/") for a in full)
+
+
+def test_a_conftest_change_runs_the_whole_suite(monkeypatch):
+    calls = _plan_calls(monkeypatch, ["tests/conftest.py"], deploy=False)
+    assert lp.check_python() is True
+    (full,) = _pytests(calls)
+    assert "--cov=bot" in full
+
+
+def test_a_change_no_test_depends_on_skips_pytest_but_not_the_audit(monkeypatch, capsys):
+    unnamed = "docs/" + "zz-never" + "-named.md"        # split, so this file does not name it (that would select this test)
+    calls = _plan_calls(monkeypatch, [unnamed], deploy=False)
+    assert lp.check_python() is True
+    assert _pytests(calls) == []
+    assert any("pip_audit" in c for c in calls)
+    assert "no test is affected" in capsys.readouterr().out
