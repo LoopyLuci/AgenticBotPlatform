@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1093 |
+| route | 1109 |
 | module | 10 |
 | setting | 72 |
 
@@ -1663,6 +1663,25 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `DELETE /api/vault/{name}` Vault Remove
 - `GET /api/vault` Vault List
 - `POST /api/vault` Vault Add
+
+### video (16)
+
+- `GET /api/video` Video Status
+- `GET /api/video/assets` Video Assets
+- `GET /api/video/assets/{asset_id}` Video Asset
+- `GET /api/video/assets/{asset_id}/file` Video Asset File
+- `GET /api/video/assets/{asset_id}/provenance` Video Asset Provenance
+- `GET /api/video/assets/{asset_id}/thumbnail` Video Asset Thumbnail
+- `GET /api/video/jobs` Video Jobs
+- `GET /api/video/jobs/{job_id}` Video Job
+- `GET /api/video/models` Video Models
+- `GET /api/video/workflows` Video Workflows
+- `POST /api/video/assets/{asset_id}/derive` Video Asset Derive
+- `POST /api/video/jobs` Video Job Submit
+- `POST /api/video/jobs/{job_id}/cancel` Video Job Cancel
+- `POST /api/video/models/{model_id}/download` Video Model Download
+- `POST /api/video/models/{model_id}/verify` Video Model Verify
+- `PUT /api/video/settings` Video Settings
 
 ### vision (8)
 

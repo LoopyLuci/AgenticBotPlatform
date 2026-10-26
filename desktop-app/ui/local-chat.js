@@ -967,7 +967,8 @@ ${(kn.failing_rules || []).length ? `<p class="lc-note">Keeps failing: ${kn.fail
 <div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
 ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}
 ${knowledge}
-${window.ABPLikeness ? window.ABPLikeness.card() : ''}`;
+${window.ABPLikeness ? window.ABPLikeness.card() : ''}
+${window.ABPVideo ? window.ABPVideo.card() : ''}`;
   }
 
   // ---- the sidebar ---------------------------------------------------------------------------------------------------

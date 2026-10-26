@@ -1,0 +1,11 @@
+{"id": "testsrc", "version": 1, "backend": "fake", "mode": "t2v", "title": "Test pattern (no model, no GPU)",
+ "description": "A labelled test-pattern clip from ffmpeg's lavfi testsrc (or OpenCV when ffmpeg is missing). Proves the queue, library and provenance without rendering anything.",
+ "model": "", "vram_gb": 0, "frames_rule": "any",
+ "params": {
+  "prompt": {"type": "string", "required": true, "max_len": 2000},
+  "seconds": {"type": "number", "default": 2, "min": 0.5, "max": 30},
+  "fps": {"type": "int", "default": 8, "min": 1, "max": 60},
+  "width": {"type": "int", "default": 320, "min": 64, "max": 1920, "multiple": 16},
+  "height": {"type": "int", "default": 192, "min": 64, "max": 1088, "multiple": 16},
+  "seed": {"type": "int", "default": -1, "min": -1, "max": 4294967295}
+ }}
