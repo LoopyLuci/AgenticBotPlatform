@@ -1379,6 +1379,13 @@ export const operations = {
    "max_tokens"
   ]
  },
+ "GET /api/conductor/buildcache": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/buildcache",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/conductor/escalations": {
   "body": false,
   "method": "GET",
@@ -8644,6 +8651,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "PUT /api/conductor/buildcache/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/conductor/buildcache/settings",
+  "path_params": [],
+  "query_params": []
+ },
  "PUT /api/conductor/knowledge/settings": {
   "body": true,
   "method": "PUT",
@@ -12320,6 +12334,20 @@ export const operations = {
   "path_params": [
    "queue_id"
   ],
+  "query_params": []
+ },
+ "conductor_buildcache_api_conductor_buildcache_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/conductor/buildcache",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_buildcache_settings_api_conductor_buildcache_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/conductor/buildcache/settings",
+  "path_params": [],
   "query_params": []
  },
  "conductor_escalations_api_conductor_escalations_get": {

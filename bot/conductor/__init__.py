@@ -36,12 +36,15 @@ DEFAULTS: dict[str, Any] = {
     "regen_sdk": True,                 # integrator: regenerate the OpenAPI document and SDK when routes changed, commit it on the integ branch
     "suite_shards": 1,                 # test files split into this many shards, run one after another (1 = the suite as one run)
     "suite_workers": "auto",           # pytest -n: "auto" = sized from the idle CPUs and free RAM (at most max_workers), or a number
-    "max_workers": 8,
+    "max_workers": 4,                  # capped at 4: the owner's CPU has had machine-check crashes under long all-core load
     "suite_lock_wait_s": 1800,         # how long a run waits for the machine-wide suite lock before giving up
     "gate_command": [],                # optional final gate after a green suite, e.g. [python, scripts/local_pipeline.py, --no-deploy]
     "gate_timeout_s": 7200,
     "integrator": {"selective_first": True},   # run the tests the merged diff affects first; the full suite is still the final gate
     "cache": {"enabled": True},        # CacheIt-backed result cache for proofs and suite runs (a missing hub just means no caching)
+    # LF8: build and test caches (bot/conductor/buildcache.py): per-test-file passes keyed by content, wheels, worker venvs and
+    # cargo/maturin target folders. Each switch has a Workspace toggle; a deploy never looks anything up.
+    "buildcache": {"tests": True, "wheels": True, "venvs": False, "cargo": True, "keep_targets": 6, "keep_venvs": 4},
     "review_scope": {"fail": False},   # reviewer: callers outside the task's declared files are a warning (true = a rejection)
     "context": {"use_codeintel": True,    # LF-INT: pre-seed prompts with codeintel slices, offer the navigation tools, give the planner a map
                 "use_vault": True,        # recall/capture through the context vault (earlier findings survive a retry)
@@ -74,9 +77,9 @@ def settings() -> dict[str, Any]:
         pass
     out = {**DEFAULTS, **{k: v for k, v in cfg.items() if k in DEFAULTS}}
     out["pusher"] = {**DEFAULTS["pusher"], **(cfg.get("pusher") if isinstance(cfg.get("pusher"), dict) else {})}
-    for k in ("integrator", "cache", "review_scope", "grok", "knowledge"):
+    for k in ("integrator", "cache", "buildcache", "review_scope", "grok", "knowledge"):
         out[k] = {**DEFAULTS[k], **(cfg.get(k) if isinstance(cfg.get(k), dict) else {})}
     out["context"] = {**DEFAULTS["context"], **(cfg.get("context") if isinstance(cfg.get("context"), dict) else {})}
     if not out["suite_command"]:
-        out["suite_command"] = [sys.executable, "-m", "pytest", "tests", "-n", "8", "-q", "-p", "no:cacheprovider", "-rf"]
+        out["suite_command"] = [sys.executable, "-m", "pytest", "tests", "-n", "4", "-q", "-p", "no:cacheprovider", "-rf"]
     return out

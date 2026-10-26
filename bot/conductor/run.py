@@ -495,6 +495,10 @@ class AgentLoopWorker:
         self.max_iterations = max_iterations
         self.shell = shell
         self.python = confine.test_python(self.repo)           # the repo's venv when it has pytest, else ABP's runtime (ships pytest)
+        if self.python == sys.executable:                      # LF8: a cached venv for the repo's requirements (conductor.buildcache.venvs)
+            from bot.conductor import buildcache
+
+            self.python = buildcache.venv_for(self.repo, cfg=context_cfg) or self.python
         self.sandbox_paths = list(sandbox_paths) if sandbox_paths else None
         self.drive = drive or self._drive
         # True inside ABP itself (Local Chat's Factory): the agent turn and the proof run in child processes

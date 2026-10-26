@@ -34,6 +34,7 @@ def _testselect_state(monkeypatch, tmp_path):
     monkeypatch.setattr(lp, "TESTSELECT_STATE", tmp_path / "testselect_state.json")
     monkeypatch.setattr(lp, "_CHANGED", None)
     monkeypatch.setattr(lp, "_FULL_SUITE_REQUIRED", "")
+    monkeypatch.setattr(lp, "TEST_CACHE", False)       # the LF8 test cache has its own tests (test_conductor_buildcache.py)
 
 
 def _script_runs(monkeypatch, outcomes):

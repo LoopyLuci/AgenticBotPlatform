@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1089,
+  "route": 1091,
   "setting": 72
  },
  "entries": [
@@ -3127,6 +3127,16 @@
    "label": "Codeintel Tests",
    "network": false,
    "where": "GET /api/codeintel/tests"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:GET /api/conductor/buildcache",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Buildcache",
+   "network": false,
+   "where": "GET /api/conductor/buildcache"
   },
   {
    "cloud": false,
@@ -12137,6 +12147,16 @@
    "label": "Cluster Offer Set",
    "network": false,
    "where": "PUT /api/cluster/offer"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:PUT /api/conductor/buildcache/settings",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Buildcache Settings",
+   "network": false,
+   "where": "PUT /api/conductor/buildcache/settings"
   },
   {
    "cloud": false,

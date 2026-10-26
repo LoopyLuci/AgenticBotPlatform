@@ -169,8 +169,8 @@
     S.sideAt = Date.now();
     const [dg, es, rb, ci] = await Promise.all([api('/api/manager/digest?text=true').catch(() => null), api('/api/manager/escalations?limit=5').catch(() => null),
       api('/api/redblue/summary?limit=3').catch(() => null), api('/api/manager/checkin').catch(() => null)]);
-    const kn = await api('/api/conductor/knowledge').catch(() => null);
-    S.side = { digest: dg, escalations: es, watchdog: rb, checkin: ci, knowledge: kn };
+    const [kn, bc] = await Promise.all([api('/api/conductor/knowledge').catch(() => null), api('/api/conductor/buildcache').catch(() => null)]);
+    S.side = { digest: dg, escalations: es, watchdog: rb, checkin: ci, knowledge: kn, buildcache: bc };
     S.panes.forEach((_, n) => renderRight(n));
   }
   function markRead(i) {
@@ -224,6 +224,19 @@
       S.side = { ...(S.side || {}), knowledge: kn };
       const [k, v] = Object.entries(change)[0];
       toast(`Factory knowledge: ${KNOW[k] || k} ${v ? 'on' : 'off'} for the next run.`);
+    } catch (e) { toast(errText(e), 'error'); }
+    S.panes.forEach((_, n) => renderRight(n));
+  }
+  const BCACHE = { tests: 'Reuse passing test files', wheels: 'Cache wheels', venvs: 'Cached venvs for workers', cargo: 'Cache cargo/maturin builds' };
+  const BCACHE_TIP = { tests: 'A test file whose content key (the file, everything it imports, the environment) already passed is not run again. A deploy always runs the whole suite.',
+    wheels: 'Wheels built for a lock file are kept in CacheIt and reused instead of rebuilt.', venvs: 'A repository without its own .venv gets one venv per set of requirements, built once and shared by its workers. Installs the requirements of the repository.',
+    cargo: 'A Rust crate gets one target folder per exact content, so an unchanged crate is not rebuilt.' };
+  async function setBuildCache(change) {        // LF8: build and test caches, each part on/off
+    try {
+      const bc = await api('/api/conductor/buildcache/settings', { method: 'PUT', body: JSON.stringify(change) });
+      S.side = { ...(S.side || {}), buildcache: bc };
+      const [k, v] = Object.entries(change)[0];
+      toast(`Factory caches: ${BCACHE[k] || k} ${v ? 'on' : 'off'}.`);
     } catch (e) { toast(errText(e), 'error'); }
     S.panes.forEach((_, n) => renderRight(n));
   }
@@ -959,6 +972,10 @@ ${fb.queue.map((q) => `<p class="lc-note">push queue ${E(q.id)}: <b>${E(q.status
     const knowledge = kn ? `<section class="lc-card"><h3>Factory knowledge</h3><p class="lc-note">${E(kn.lessons || 0)} lesson(s) from ${E(kn.plans || 0)} earlier run(s): ${E((kn.by_outcome || {}).accepted || 0)} accepted, ${E((kn.by_outcome || {}).rejected || 0)} rejected.</p>
 <div class="lc-kv">${(kn.switches || []).map((k) => `<div><label title="${E(KNOW_TIP[k] || '')}"><input type="checkbox" data-lc="know" data-key="${E(k)}"${kn.settings && kn.settings[k] ? ' checked' : ''}> ${E(KNOW[k] || k)}</label></div>`).join('')}</div>
 ${(kn.failing_rules || []).length ? `<p class="lc-note">Keeps failing: ${kn.failing_rules.map((r) => `${E(r.rule)} (${E(r.count)}x)`).join(', ')}</p>` : ''}</section>` : '';
+    const bc = sd.buildcache;
+    const bt = bc && bc.stats && bc.stats.tests;
+    const caches = bc ? `<section class="lc-card"><h3>Factory caches</h3>${bt ? `<p class="lc-note">Test files: ${E(bt.hits || 0)} reused, ${E(bt.misses || 0)} run, about ${E(Math.round(bt.seconds_saved || 0))} s saved.</p>` : ''}
+<div class="lc-kv">${(bc.switches || []).map((k) => `<div><label title="${E(BCACHE_TIP[k] || '')}"><input type="checkbox" data-lc="bcache" data-key="${E(k)}"${bc.settings && bc.settings[k] ? ' checked' : ''}> ${E(BCACHE[k] || k)}</label></div>`).join('')}</div></section>` : '';
     const wd = sd.watchdog ? `<p class="lc-note">WatchDog: ${E(sd.watchdog.total || 0)} incident(s)${sd.watchdog.escapes ? `, <b class="lc-warn">${E(sd.watchdog.escapes)} escape(s)</b>` : ''}. Containment is only proposed, never run.</p>` : '';
     el.innerHTML = `<section class="lc-card"><h3>Context</h3>${meter}</section>${c ? `<section class="lc-card"><h3>Agent</h3>${agent}</section>` : ''}${board}
 <section class="lc-card"><h3>Model</h3>${modelDetails(modelRow(model))}</section>
@@ -967,6 +984,7 @@ ${(kn.failing_rules || []).length ? `<p class="lc-note">Keeps failing: ${kn.fail
 <div><span>Workspace</span><b>${E(s.workspace || 'none')}</b></div></div>` : '<p class="lc-note">A session starts with your first message.</p>'}</section>
 ${checkins || esc || dg || wd ? `<section class="lc-card"><h3>Manager &amp; WatchDog</h3>${checkins}${esc}${dg}${wd}</section>` : ''}
 ${knowledge}
+${caches}
 ${window.ABPLikeness ? window.ABPLikeness.card() : ''}`;
   }
 
@@ -1339,6 +1357,7 @@ ${(st.running || []).length ? `<span>${st.running.length} answering</span>` : ''
       else if (t.dataset.lc === 'grok-box') setGrok({ confine_backend: t.value });
       else if (t.dataset.lc === 'mgr-checkins') setCheckins({ enabled: t.checked });
       else if (t.dataset.lc === 'know') setKnowledge({ [t.dataset.key]: t.checked });
+      else if (t.dataset.lc === 'bcache') setBuildCache({ [t.dataset.key]: t.checked });
       else if (t.dataset.lc === 'mgr-interval') setCheckins({ interval_s: Number(t.value) });
       else if (t.dataset.lc === 'workspace') setField(i, 'workspace', t.value.trim());
     });

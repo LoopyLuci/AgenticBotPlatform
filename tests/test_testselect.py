@@ -168,8 +168,8 @@ def test_schedule_forces_a_full_run_and_resets_only_on_a_pass(repo, tmp_path):
 
 def test_worker_counts_are_capped(monkeypatch):
     monkeypatch.delenv("ABP_PYTEST_MAX_WORKERS", raising=False)
-    assert ts.worker_cap(32) == 8 and ts.worker_cap(8) == 4 and ts.worker_cap(1) == 1
-    assert ts.worker_count(None, cpus=32) == 8
+    assert ts.worker_cap(32) == 4 and ts.worker_cap(8) == 4 and ts.worker_cap(1) == 1
+    assert ts.worker_count(None, cpus=32) == 4
     assert ts.worker_count(2, cpus=32) == 0                      # a tiny selection runs serially
     assert ts.worker_count(9, cpus=32) == 3
     monkeypatch.setenv("ABP_PYTEST_MAX_WORKERS", "0")

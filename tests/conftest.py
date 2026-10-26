@@ -124,6 +124,18 @@ def _no_real_grok_vm(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_live_cacheit(monkeypatch):
+    """The conductor's caches (bot/conductor/cache.py, buildcache.py) talk to the live CacheIt hub when it runs: no test may read
+    a pass recorded by the real machine or write one into it. Tests that want a cache inject their own backend."""
+    from bot.conductor import cache as cachelib
+
+    def _down():
+        raise OSError("no live CacheIt in tests")
+
+    monkeypatch.setattr(cachelib, "_module_backend", _down)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""
