@@ -211,6 +211,24 @@ def test_the_modules_page_finds_the_hub_the_supervisor_started_in_the_mm_home(hu
     assert found is not None and found.url == hub.url.rstrip("/") and found.token == OWNER
 
 
+def test_the_supervisor_starts_the_hub_at_the_configured_home(tmp_path, monkeypatch):
+    """`modelmistress.home` (a folder off the system drive, say) reaches the hub: --home and MM_HOME both point there."""
+    from bot.modelmistress import guard, supervisor
+    from bot.modules import registry
+    from bot.sandbox_ns import spawn as ns
+
+    home = tmp_path / "mm-elsewhere"
+    monkeypatch.delenv("MM_HOME", raising=False)
+    monkeypatch.setattr(client, "_cfg", lambda: {"home": str(home)})
+    monkeypatch.setattr(guard, "virtualized", lambda h: None)
+    monkeypatch.setattr(registry, "expand_cmd", lambda m, c: ["model-mistress", "--home", str(tmp_path / "data"), "serve"])
+    seen = {}
+    monkeypatch.setattr(ns, "spawn", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"]))
+    supervisor._start().close()
+    assert seen["cmd"][seen["cmd"].index("--home") + 1] == str(home)
+    assert seen["env"]["MM_HOME"] == str(home) and home.is_dir()
+
+
 def test_a_machine_without_the_module_hub_is_not_an_error(monkeypatch, tmp_path):
     from bot.modules import registry
 

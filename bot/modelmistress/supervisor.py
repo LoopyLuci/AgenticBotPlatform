@@ -72,7 +72,7 @@ def _start(cell=None):
     else:
         cmd[1:1] = ["--home", str(home)]
     exe = mh._which(cmd[0]) or cmd[0]
-    env = {**os.environ, "ABP_MODULE_ID": m.id, "ABP_MODULE_DATA": str(home), **mh._modkit_env(), **mh.abp_env(m)}
+    env = {**os.environ, "ABP_MODULE_ID": m.id, "ABP_MODULE_DATA": str(home), "MM_HOME": str(home), **mh._modkit_env(), **mh.abp_env(m)}
     ws = mh._workspace(m)
     cwd = ws if ws.is_dir() else home                # the built target can live apart from a checkout (another worktree's)
     own = cell is None
