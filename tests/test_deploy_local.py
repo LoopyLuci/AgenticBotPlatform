@@ -122,7 +122,7 @@ _FAKE_ABP = textwrap.dedent('''
 
     spec = json.load(open(os.environ["FAKE_SPEC"], encoding="utf-8"))
     started = time.monotonic()
-    calls = {"bots": 0}
+    calls = {"bots": 0, "openapi": 0}
 
     def live(row):
         return bool(row.get("live")) and (time.monotonic() - started) >= spec.get("bots_delay", 0.0)
@@ -143,6 +143,9 @@ _FAKE_ABP = textwrap.dedent('''
                     return self._send(503, {"status": "degraded", "db_ok": False})
                 return self._send(200, {"status": "ok", "db_ok": True, "bundle": spec.get("bundle", {})})
             if route == "/openapi.json":
+                calls["openapi"] += 1
+                if calls["openapi"] in spec.get("openapi_error_calls", ()):    # the backend restarting just after its health
+                    return self._send(503, {"detail": "restarting"})
                 paths = spec["paths"] if spec.get("full_spec", True) else spec["paths"][:1]
                 return self._send(200, {"openapi": "3.1.0", "paths": {p: {} for p in paths}})
             if route == "/api/bots":
@@ -664,6 +667,14 @@ def test_verify_accepts_a_healthy_app_serving_this_commits_api(checkout, fake_ab
     assert "health ok" in "\n".join(lines)
     assert "matches docs/api/openapi.json (3 paths)" in "\n".join(lines)
     assert "1 enabled bot instance(s) are live again" in "\n".join(lines)
+
+
+def test_verify_retries_the_api_when_the_backend_restarts_just_after_its_health(checkout, fake_abp):
+    server = fake_abp(_healthy_spec(openapi_error_calls=[1, 2]))
+    lines: list[str] = []
+    result = deploy_local.verify(_install_dir(checkout), server.port, root=checkout, timeout_s=30, log=lines.append)
+    assert result.ok, result.failures
+    assert "matches docs/api/openapi.json (3 paths)" in "\n".join(lines)
 
 
 def test_verify_waits_for_a_bot_instance_that_is_still_coming_back(checkout, fake_abp):

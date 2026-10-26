@@ -801,10 +801,17 @@ def verify(install_dir: Path, port: int = DEFAULT_PORT, *, root: Path = ROOT, to
     elif bundle.get("commit"):
         log(f"  running bundle {bundle['commit']}")
 
-    status, served = _get(f"{base}/openapi.json")
-    if status != 200 or not isinstance(served, dict) or "paths" not in served:
-        result.fail(f"could not read {base}/openapi.json (HTTP {status})")
-        return result
+    # The backend can restart once just after its first healthy answer (the desktop shell's supervisor), so a refused
+    # read here is retried for a while instead of failing the deploy on a moment's gap
+    api_deadline = max(deadline, time.monotonic() + 60.0)
+    while True:
+        status, served = _get(f"{base}/openapi.json")
+        if status == 200 and isinstance(served, dict) and "paths" in served:
+            break
+        if time.monotonic() >= api_deadline:
+            result.fail(f"could not read {base}/openapi.json (HTTP {status})")
+            return result
+        time.sleep(2.0)
     live = set(served["paths"])
     if live != expected:
         missing = sorted(expected - live)
