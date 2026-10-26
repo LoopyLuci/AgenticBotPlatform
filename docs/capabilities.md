@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1089 |
+| route | 1093 |
 | module | 10 |
 | setting | 72 |
 
@@ -1049,15 +1049,19 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/mobile-keys/{key_id}/tier` Api Mobile Keys Set Tier
 - `PUT /api/mobile-keys/{key_id}` Api Mobile Keys Update
 
-### modelmistress (7)
+### modelmistress (11)
 
 - `GET /api/modelmistress/hub` Modelmistress Hub
 - `GET /api/modelmistress/jobs` Modelmistress Jobs
 - `GET /api/modelmistress/models` Modelmistress Models
 - `GET /api/modelmistress/status` Modelmistress Status
+- `GET /api/modelmistress/v1/models` Modelmistress Relay Models
 - `POST /api/modelmistress/load` Modelmistress Load
 - `POST /api/modelmistress/pull` Modelmistress Pull
 - `POST /api/modelmistress/unload` Modelmistress Unload
+- `POST /api/modelmistress/v1/chat/completions` Modelmistress Relay Chat
+- `POST /api/modelmistress/v1/completions` Modelmistress Relay Completions
+- `POST /api/modelmistress/v1/embeddings` Modelmistress Relay Embeddings
 
 ### models (8)
 

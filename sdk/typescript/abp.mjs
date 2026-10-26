@@ -3155,6 +3155,13 @@ export const operations = {
    "peer"
   ]
  },
+ "GET /api/modelmistress/v1/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/v1/models",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/models": {
   "body": false,
   "method": "GET",
@@ -6806,6 +6813,27 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/modelmistress/unload",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/v1/chat/completions": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/chat/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/v1/completions": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/modelmistress/v1/embeddings": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/embeddings",
   "path_params": [],
   "query_params": []
  },
@@ -15431,6 +15459,34 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/modelmistress/pull",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_relay_chat_api_modelmistress_v1_chat_completions_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/chat/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_relay_completions_api_modelmistress_v1_completions_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/completions",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_relay_embeddings_api_modelmistress_v1_embeddings_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/modelmistress/v1/embeddings",
+  "path_params": [],
+  "query_params": []
+ },
+ "modelmistress_relay_models_api_modelmistress_v1_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/modelmistress/v1/models",
   "path_params": [],
   "query_params": []
  },

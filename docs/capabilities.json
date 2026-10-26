@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1089,
+  "route": 1093,
   "setting": 72
  },
  "entries": [
@@ -5220,6 +5220,16 @@
   },
   {
    "cloud": false,
+   "desc": "API (modelmistress)",
+   "id": "route:GET /api/modelmistress/v1/models",
+   "keywords": "modelmistress",
+   "kind": "route",
+   "label": "Modelmistress Relay Models",
+   "network": false,
+   "where": "GET /api/modelmistress/v1/models"
+  },
+  {
+   "cloud": false,
    "desc": "API (models)",
    "id": "route:GET /api/models",
    "keywords": "models",
@@ -9767,6 +9777,36 @@
    "label": "Modelmistress Unload",
    "network": false,
    "where": "POST /api/modelmistress/unload"
+  },
+  {
+   "cloud": false,
+   "desc": "API (modelmistress)",
+   "id": "route:POST /api/modelmistress/v1/chat/completions",
+   "keywords": "modelmistress",
+   "kind": "route",
+   "label": "Modelmistress Relay Chat",
+   "network": false,
+   "where": "POST /api/modelmistress/v1/chat/completions"
+  },
+  {
+   "cloud": false,
+   "desc": "API (modelmistress)",
+   "id": "route:POST /api/modelmistress/v1/completions",
+   "keywords": "modelmistress",
+   "kind": "route",
+   "label": "Modelmistress Relay Completions",
+   "network": false,
+   "where": "POST /api/modelmistress/v1/completions"
+  },
+  {
+   "cloud": false,
+   "desc": "API (modelmistress)",
+   "id": "route:POST /api/modelmistress/v1/embeddings",
+   "keywords": "modelmistress",
+   "kind": "route",
+   "label": "Modelmistress Relay Embeddings",
+   "network": false,
+   "where": "POST /api/modelmistress/v1/embeddings"
   },
   {
    "cloud": false,

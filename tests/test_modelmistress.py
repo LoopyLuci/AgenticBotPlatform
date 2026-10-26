@@ -69,6 +69,14 @@ class StandInHub:
             self.calls.append(("POST", "/v1/chat/completions", body, w))
             if self.chat_status != 200:
                 return JSONResponse({"error": {"code": "backend_error", "message": "no such model"}}, self.chat_status)
+            if body.get("stream"):
+                from fastapi.responses import StreamingResponse
+
+                def sse():
+                    for word in ("hi ", "from ", "the hub"):
+                        yield "data: " + json.dumps({"choices": [{"index": 0, "delta": {"content": word}}]}) + "\n\n"
+                    yield "data: [DONE]\n\n"
+                return StreamingResponse(sse(), media_type="text/event-stream")
             return {"id": "c1", "object": "chat.completion", "model": body["model"],
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi from the hub"}, "finish_reason": "stop"}],
                     "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7}}
@@ -338,6 +346,34 @@ def test_the_tools(hub):
     assert '"status": "running"' in run("modelmistress_pull", {"model": "gemma3:1b"})
     assert run("modelmistress_pull", {}).startswith("Error")
     assert run("modelmistress_load", {"model": "nope"}).startswith("Error: no model nope")
+
+
+def test_the_relay_lets_a_client_without_the_hubs_token_use_its_openai_routes(hub, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from bot.dashboard.server import build_app
+
+    monkeypatch.setenv("DASHBOARD_TOKEN", "t" * 48)
+    c = TestClient(build_app())
+    bearer = {"Authorization": "Bearer " + "t" * 48}
+    assert c.get("/api/modelmistress/v1/models").status_code == 401
+    assert c.get("/api/modelmistress/v1/models", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert [m["id"] for m in c.get("/api/modelmistress/v1/models", headers=bearer).json()["data"]] == ["llama3.2:1b", "qwen3:8b"]
+    assert hub.calls[-1][3] == "owner", "the hub sees ABP's own token, never the caller's"
+    msg = [{"role": "user", "content": "x"}]
+    answer = c.post("/api/modelmistress/v1/chat/completions", headers={"X-Dashboard-Token": "t" * 48},
+                    json={"model": "qwen3:8b", "messages": msg})
+    assert answer.status_code == 200 and answer.json()["choices"][0]["message"]["content"] == "hi from the hub"
+    with c.stream("POST", "/api/modelmistress/v1/chat/completions", headers=bearer,
+                  json={"model": "qwen3:8b", "messages": msg, "stream": True}) as r:
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+        text = "".join(r.iter_text())
+    words = [json.loads(line[6:])["choices"][0]["delta"]["content"] for line in text.splitlines()
+             if line.startswith("data: {")]
+    assert "".join(words) == "hi from the hub" and text.rstrip().endswith("[DONE]")
+    hub.chat_status = 404
+    assert c.post("/api/modelmistress/v1/chat/completions", headers=bearer,
+                  json={"model": "nope", "messages": msg}).status_code == 404
 
 
 def test_the_api(hub, monkeypatch):
