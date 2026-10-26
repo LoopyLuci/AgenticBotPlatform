@@ -206,7 +206,8 @@ class Conductor:
         if cctx["use_codeintel"] and (replan or not planner.plan_exists(goal, self.repo)):
             extra = await asyncio.to_thread(navctx.planning_context, self.repo, planner.goal_from(goal, self.repo)[0], self.cfg)
         learned = await asyncio.to_thread(knowledge.planner_block, self.repo_name, planner.goal_from(goal, self.repo)[0], self.cfg)
-        context = chr(10).join(c for c in (context, learned, extra) if c)
+        km = await asyncio.to_thread(knowledge.km_block, self.repo, self.repo_name, planner.goal_from(goal, self.repo)[0], None, self.cfg)
+        context = chr(10).join(c for c in (context, learned, km, extra) if c)
         return await planner.make_plan(goal, repo=self.repo_name, worktree_root=str(root).replace("\\", "/"), context=context,
                                        model=self.model or self.cfg["model"], max_tasks=int(self.cfg["max_tasks"]), root=self.repo, replan=replan,
                                        context_cap=int(cctx["plan_context_chars"]))
@@ -505,6 +506,7 @@ class AgentLoopWorker:
         self.cfg = context_cfg                                 # the conductor settings (None = read them)
         self._packs: dict[str, tuple] = {}                      # task key -> its context_pack, built once and reused on a retry
         self._rejected: dict[str, list[str]] = {}               # task key -> what the reviewer already rejected
+        self._kms: dict[str, str] = {}                          # task key -> its project knowledge module slice (LF7)
         if shell == "sandbox" and not confine.supported():          # refused up front, never degraded to an unconfined shell
             raise confine.SandboxUnavailable("--shell sandbox needs a Windows AppContainer; use --shell none here")
 
@@ -539,6 +541,10 @@ class AgentLoopWorker:
         learned = await asyncio.to_thread(knowledge.task_block, str(spec.get("repo_name") or "abp"), spec["title"],
                                           str(spec.get("detail") or ""), list(spec.get("files") or []),
                                           plan_id=str(spec.get("plan_id") or ""), cfg=self.cfg)
+        if key not in self._kms:                                # the project KM slice, chosen once per task
+            self._kms[key] = await asyncio.to_thread(knowledge.km_block, wt, str(spec.get("repo_name") or "abp"),
+                                                     f"{spec['title']}\n{spec.get('detail') or ''}", list(spec.get("files") or []), self.cfg)
+        km = self._kms[key]
         before = await asyncio.to_thread(navctx.usage, wt) if pack else {}
         proof_cmd = str((spec.get("proof") or {}).get("command", "") or "")
         test_files = proof.target_files(proof_cmd)
@@ -556,7 +562,7 @@ class AgentLoopWorker:
                   ("\nReading code: call outline(path) first and read_symbol / find_symbol for the parts you need; read a whole file "
                    "with read_file only when it is short or you need all of it." if nav else "") +
                   (f"\n\nCode context for this task (pre-fetched; use outline / read_symbol / find_symbol for more instead of reading "
-                   f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") + (f"\n\n{learned}" if learned else "") +
+                   f"whole files):\n{pack}" if pack else "") + (f"\n\n{vault}" if vault else "") + (f"\n\n{learned}" if learned else "") + (f"\n\n{km}" if km else "") +
                   (f"\n\nPlan from the Grok advisor (follow it unless it breaks the rules above):\n{spec['advice']}"
                    if spec.get("advice") else "") +
                   (f"\n\nYour previous attempt was REJECTED by the reviewer. Fix exactly these:\n{feedback}" if feedback else ""))

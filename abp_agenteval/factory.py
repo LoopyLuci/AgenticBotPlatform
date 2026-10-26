@@ -408,7 +408,22 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
         _discard(root)
 
 
-def build_prompt(task: FactoryTask, *, shell: str = "none") -> str:
+def knowledge_block(task: FactoryTask, ws: Path, knowledge: str = "off") -> str:
+    """LF7: with `knowledge` "km", the project knowledge module (bot/conductor/projectkm.py, mmkm/1) built from the task's own
+    base worktree (never from a later commit, so it cannot hold the answer) and sliced for the issue. Lessons from earlier
+    Factory runs are left out: they come from this machine's history and could hold the real change."""
+    if knowledge != "km":
+        return ""
+    from bot.conductor import projectkm
+
+    with tempfile.TemporaryDirectory(prefix="abp-km-") as out:
+        info = projectkm.build(ws, "abp", Path(out), lessons=False)
+        chunks = projectkm.load(Path(info["memory"]))
+    return projectkm.format_block(projectkm.select(chunks, f"{task.title}\n{task.prompt}", re.findall(r"[\w./-]+\.py\b", task.prompt),
+                                                   budget_chars=1500))
+
+
+def build_prompt(task: FactoryTask, *, shell: str = "none", knowledge: str = "") -> str:
     how = ("You can run `python -m pytest -q -p no:cacheprovider <path>` and `python -m ruff check <file>` in a sandbox with no network."
            if shell == "sandbox" else
            "You cannot run commands here, but the run_tests tool runs pytest on test files (for example tests/test_x.py::test_y) "
@@ -416,7 +431,7 @@ def build_prompt(task: FactoryTask, *, shell: str = "none") -> str:
     return (f"You are working in a checkout of a Python repository (your current folder). Resolve the issue below by changing "
             f"the code in this folder. {how} Keep the change small and focused: touch only what the issue needs, delete nothing, "
             f"add or update a test when it is natural. Do not commit. Finish with a two-line summary of what you changed.\n\n"
-            f"## Issue: {task.title}\n\n{task.prompt.strip()}\n")
+            f"## Issue: {task.title}\n\n{task.prompt.strip()}\n" + (f"\n{knowledge.strip()}\n" if knowledge else ""))
 
 
 # ------------------------------------------------------------------------------------------------------ run + report
@@ -424,7 +439,7 @@ def build_prompt(task: FactoryTask, *, shell: str = "none") -> str:
 def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any], *, model: str, python: str,
              repo: Path = REPO, workdir: Optional[Path] = None, context: int = 0, shell: str = "none",
              sandbox_paths: Optional[list[str]] = None, timeout_s: Optional[float] = None, keep: bool = False,
-             lint: bool = True, test_timeout: float = 300, small_model: str = "on") -> dict:
+             lint: bool = True, test_timeout: float = 300, small_model: str = "on", knowledge: str = "off") -> dict:
     """One task end to end: worktree, agent, judge, cleanup. Always returns a result row (a crash is a failed row)."""
     limit = float(timeout_s or task.timeout_s)
     started = time.monotonic()
@@ -441,7 +456,9 @@ def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any],
     try:
         bench = Bench(repo, task, workdir)
         bench.__enter__()
-        result = drive_agent(build_prompt(task, shell=shell), bench.path, transport_factory(task), model, timeout_s=limit,
+        kb = knowledge_block(task, bench.path, knowledge)
+        row["knowledge_chars"] = len(kb)
+        result = drive_agent(build_prompt(task, shell=shell, knowledge=kb), bench.path, transport_factory(task), model, timeout_s=limit,
                              max_iterations=task.max_iterations, context=context, shell=shell, sandbox_paths=sandbox_paths,
                              python=python, small_model=small_model)
         row["duration_ms"] = int((time.monotonic() - started) * 1000)
@@ -520,7 +537,7 @@ def run_all(tasks: list[FactoryTask], transport_factory: Callable[[FactoryTask],
     return {"schema": SCHEMA_VERSION, "mode": "factory", "model": model, "when": time.time(), **summary,
             "duration_ms": sum(r["duration_ms"] for r in rows),
             "notes": ["each task runs in a throwaway git worktree of the commit's parent", f"shell tool: {kw.get('shell', 'none')}",
-                      f"small-model mode: {kw.get('small_model', 'on')}",
+                      f"small-model mode: {kw.get('small_model', 'on')}", f"project knowledge (LF7): {kw.get('knowledge', 'off')}",
                       f"context window told to the agent: {kw.get('context') or 'default'}"],
             "results": rows}
 
@@ -598,7 +615,7 @@ def main(args, python: str) -> int:
     transport = endpoint_transport(args.base_url, api_key)
     report = run_all(tasks, lambda _t: transport, model=args.model, python=python, repo=repo, workdir=workdir, context=args.context,
                      shell=args.shell, sandbox_paths=args.sandbox_path or [], timeout_s=args.timeout, keep=args.keep,
-                     small_model=args.small_model)
+                     small_model=args.small_model, knowledge=getattr(args, "knowledge", "off"))
     report["model"] = args.label or args.model
     if args.out:
         from . import report as rep

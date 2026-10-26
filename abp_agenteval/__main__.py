@@ -90,6 +90,8 @@ def main(argv=None) -> int:
             f.add_argument("--small-model", choices=("on", "off", "auto"), default="on",
                            help="small-model mode (core tools, compact prompt): on (default; a --base-url endpoint is not detected as local, so auto would "
                                 "leave it off), off, or auto")
+            f.add_argument("--knowledge", choices=("off", "km"), default="off",
+                           help="km: add the project knowledge module (mmkm/1, built from each task's base commit) to the prompt (LF7)")
             f.add_argument("--out", help="write the JSON report here")
             f.add_argument("--keep", action="store_true", help="keep each worktree for inspection (you remove them)")
     cmp_ = sub.add_parser("compare", help="run the suite once per variant of prompt / tool wording and compare (see abp_agenteval/compare.py)")

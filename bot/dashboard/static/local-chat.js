@@ -214,10 +214,11 @@
     S.panes.forEach((_, n) => renderRight(n));
   }
   const KNOW = { enabled: 'Record lessons', for_planner: 'Give the planner earlier runs', for_workers: 'Give workers outcomes of similar tasks',
-    owner_rules: 'Owner rules to the planner', to_memoryfabric: 'Mirror into the memory fabric' };
+    owner_rules: 'Owner rules to the planner', to_memoryfabric: 'Mirror into the memory fabric', project_km: 'Project knowledge module' };
   const KNOW_TIP = { enabled: 'Each accepted, rejected, stuck or escalated task becomes a lesson.', for_planner: 'Similar earlier plans, their outcomes and the review rules that keep failing go into planning.',
     for_workers: 'A worker prompt gets earlier outcomes of tasks on the same files or with a similar title.', owner_rules: 'Standing rules from the memory fabric go into planning.',
-    to_memoryfabric: 'Lessons also go into the memory fabric knowledge base, so the memory graph links them.' };
+    to_memoryfabric: 'Lessons also go into the memory fabric knowledge base, so the memory graph links them.',
+    project_km: 'The repo as an mmkm/1 knowledge module (conventions, module contracts, review findings): the relevant part goes into each prompt.' };
   async function setKnowledge(change) {         // LF7: what the Factory learns from earlier runs, each part on/off
     try {
       const kn = await api('/api/conductor/knowledge/settings', { method: 'PUT', body: JSON.stringify(change) });

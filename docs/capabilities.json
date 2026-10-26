@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1089,
+  "route": 1090,
   "setting": 72
  },
  "entries": [
@@ -8047,6 +8047,16 @@
    "label": "Conductor Knowledge Export",
    "network": false,
    "where": "POST /api/conductor/knowledge/export"
+  },
+  {
+   "cloud": false,
+   "desc": "API (conductor)",
+   "id": "route:POST /api/conductor/knowledge/km",
+   "keywords": "conductor",
+   "kind": "route",
+   "label": "Conductor Knowledge Km",
+   "network": false,
+   "where": "POST /api/conductor/knowledge/km"
   },
   {
    "cloud": false,

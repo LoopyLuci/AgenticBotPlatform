@@ -53,7 +53,7 @@ DEFAULTS: dict[str, Any] = {
     # LF7: knowledge from earlier runs (bot/conductor/knowledge.py): lessons recorded per task outcome, recalled into the
     # planner's context and each worker's prompt, mirrored into the memory fabric. Each switch has a Workspace toggle.
     "knowledge": {"enabled": True, "for_planner": True, "for_workers": True, "owner_rules": True, "to_memoryfabric": True,
-                  "planner_chars": 2500, "task_chars": 1500, "max_lessons": 6},
+                  "project_km": True, "km_chars": 1500, "planner_chars": 2500, "task_chars": 1500, "max_lessons": 6},
     # Grok Build as a Factory worker (bot/conductor/grok_worker.py): mode off | advisor (Grok plans with no tools, a confined
     # local model works) | confined (Grok works in its own AppContainer with internet; needs network_approved) | auto (the
     # default: confined when approved, else advisor; skipped where Grok is not installed). The Workspace switches both.
