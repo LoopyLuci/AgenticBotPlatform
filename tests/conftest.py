@@ -104,6 +104,13 @@ def _local_chat_tests_have_a_hub(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_machine_mm_home(monkeypatch, tmp_path_factory):
+    """MM_HOME set on the machine (a ModelMistress home off the system drive) names the real hub's control file: no test may
+    find that hub. A test about the home sets MM_HOME itself."""
+    monkeypatch.setenv("MM_HOME", str(tmp_path_factory.mktemp("mm-home-none")))
+
+
+@pytest.fixture(autouse=True)
 def _no_grok_sign_in(monkeypatch):
     """The model picker lists Grok models from the real `grok models` when grok is installed and signed in: no test may depend
     on that machine state (tests/test_localchat_grok.py keeps the real parser)."""
