@@ -108,7 +108,9 @@ def free_port() -> int:
 def base_env(**extra) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()
            if k not in _STRIPPED and not k.startswith(("COV_CORE_", "COVERAGE_"))}  # never run instances traced
-    env.update(PYTHONPATH=str(CODE_ROOT), PYTHONUNBUFFERED="1", PYTHONUTF8="1", ABP_DISABLE_MDNS="1")
+    # ABP_NO_MODELMISTRESS: a test instance must not start the machine's real ModelMistress hub (detached, it outlives
+    # the instance and shows up as a process the swap left behind) whenever MM_HOME points somewhere it can reach
+    env.update(PYTHONPATH=str(CODE_ROOT), PYTHONUNBUFFERED="1", PYTHONUTF8="1", ABP_DISABLE_MDNS="1", ABP_NO_MODELMISTRESS="1")
     env.update({k: str(v) for k, v in extra.items()})
     return env
 
