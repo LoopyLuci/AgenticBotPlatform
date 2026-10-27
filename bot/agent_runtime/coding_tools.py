@@ -183,6 +183,24 @@ def apply_edit(text: str, old: str, new: str, replace_all: bool = False) -> tupl
     return "\n".join(lines), 1, "whitespace-insensitive"
 
 
+def verify_saved(path: Path, rel: str, expected: str) -> str:
+    """Read the file back after an edit. A write that did not land (another writer, a formatter, a sync tool) is an error;
+    a Python file that no longer parses gets a warning naming the line, so the model fixes it in its next step instead of
+    learning it from a failing test much later."""
+    try:
+        got = path.read_bytes().decode("utf-8", errors="replace").replace("\r\n", "\n")
+    except OSError as exc:
+        raise ToolError(f"{rel} could not be read back after the edit: {exc}") from exc
+    if got != expected:
+        raise ToolError(f"{rel} does not hold the edit after saving (something else changed it); read it again and redo the edit")
+    if path.suffix == ".py":
+        try:
+            compile(got, rel, "exec", dont_inherit=True)
+        except SyntaxError as exc:
+            return f"\nWARNING: {rel} no longer parses: {exc.msg} at line {exc.lineno}. Fix that line next."
+    return ""
+
+
 async def _edit_file(inp: dict, *, workspace: Path, instance_id=None, device_tier=None) -> str:
     rel = inp.get("path") or ""
     path = safe_path(workspace, rel)
@@ -203,9 +221,10 @@ async def _edit_file(inp: dict, *, workspace: Path, instance_id=None, device_tie
     text, eol = _load(path, rel)
     new_text, n, how = apply_edit(text, old, new, bool(inp.get("replace_all")))
     _save(path, new_text, eol)
+    warn = verify_saved(path, rel, new_text)
     record_read(path)
     note = "" if how == "exact" else f" ({how} match)"
-    return f"Edited {rel}: {n} replacement{'s' if n != 1 else ''}{note}.\n{_diff(text, new_text, rel)}"
+    return f"Edited {rel}: {n} replacement{'s' if n != 1 else ''}{note}.\n{_diff(text, new_text, rel)}{warn}"
 
 
 async def _multi_edit(inp: dict, *, workspace: Path, instance_id=None, device_tier=None) -> str:
@@ -232,8 +251,9 @@ async def _multi_edit(inp: dict, *, workspace: Path, instance_id=None, device_ti
             raise ToolError(f"edit {i} of {len(edits)}: {exc} (nothing was changed)") from exc
         total += n
     _save(path, text, eol)
+    warn = verify_saved(path, rel, text)
     record_read(path)
-    return f"Edited {rel}: {len(edits)} edits, {total} replacements.\n{_diff(original, text, rel)}"
+    return f"Edited {rel}: {len(edits)} edits, {total} replacements.\n{_diff(original, text, rel)}{warn}"
 
 
 # ---- unified diffs --------------------------------------------------------------

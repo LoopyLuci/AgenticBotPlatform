@@ -109,6 +109,7 @@ FIELDS: list[dict] = [
     _f("mcp_pinning", "bool", "Pin MCP tool descriptions", "Block an MCP tool whose description or inputs change after you approved it, since that is how a tool can be turned against you.", S, "External tools", True),
     # ------------------------------------------------------------------ tools
     _f("run_tests.timeout_s", "int", "Test run time limit", "How long the run_tests tool (pytest for agents that have no shell) may take before it is stopped. It runs in the same sandbox as shell commands.", T, "Tests", 300, min=10, max=3600, unit="seconds", applies="next command"),
+    _f("run_script.timeout_s", "int", "Generator script time limit", "How long the run_script tool (the repository's own generator scripts, only in a confining sandbox without network) may take before it is stopped.", T, "Tests", 300, min=10, max=3600, unit="seconds", applies="next command"),
     _f("code_search.embeddings", "bool", "Search code by meaning", "Let code search match by meaning as well as by words, using a ModelMistress embeddings model. Falls back to keyword search when none is running.", T, "Code search", True),
     _f("code_search.embedding_model", "text", "Embeddings model", "The embeddings model code search asks ModelMistress for.", T, "Code search", "mm-embed-1", advanced=True),
     _f("code_search.embedding_max_chunks", "int", "Most code pieces to index by meaning", "Upper limit on how many pieces of code are embedded per project, to keep indexing quick.", T, "Code search", 512, min=1, max=100000, advanced=True),
