@@ -59,7 +59,7 @@ def summarize(root: Path, summarizer: Summarizer, *, model: str = "", prefix: st
     """Summarize up to `limit` pending files within `budget_s` seconds. Returns counts and the paths that failed."""
     root = Path(root).resolve()
     started = time.monotonic()
-    done, failed = 0, []
+    done, failed, errors = 0, [], {}
     for item in pending(root, prefix, limit):
         if time.monotonic() - started > budget_s:
             break
@@ -77,11 +77,13 @@ def summarize(root: Path, summarizer: Summarizer, *, model: str = "", prefix: st
             answer = " ".join(str(summarizer(rel, text) or "").replace(CUT_MARK.strip(), "").split())[:MAX_SUMMARY]
             if answer and cut:
                 answer += f" (From the first {max_input:,} characters.)"
-        except Exception:  # noqa: BLE001 - one bad answer must not stop the run
+        except Exception as exc:  # noqa: BLE001 - one bad answer must not stop the run
             failed.append(rel)
+            errors[rel] = f"{type(exc).__name__}: {exc}"[:200]
             continue
         if not answer:
             failed.append(rel)
+            errors[rel] = "empty answer"
             continue
         with store.write_lock(root):
             conn = store.connect(root)
@@ -94,7 +96,7 @@ def summarize(root: Path, summarizer: Summarizer, *, model: str = "", prefix: st
                 conn.close()
         done += 1
     left = len(pending(root, prefix, 1_000_000))
-    return {"summarized": done, "failed": failed, "pending": left, "seconds": round(time.monotonic() - started, 1)}
+    return {"summarized": done, "failed": failed, "errors": errors, "pending": left, "seconds": round(time.monotonic() - started, 1)}
 
 
 def summary_of(conn, rel: str) -> Optional[str]:
@@ -147,12 +149,13 @@ def relay_summarizer(model: str, base_url: str, token: str, timeout: float = 300
                              {"X-Dashboard-Token": token}, timeout)
 
 
-def server_summarizer(model: str, base_url: str, timeout: float = 300.0) -> Summarizer:
-    """Straight to a model server's own OpenAI port (for example the llama-server a hub started), when neither the
-    hub nor ABP can be reached. Loopback only: file text must not leave this machine."""
+def server_summarizer(model: str, base_url: str, timeout: float = 300.0, key: str = "") -> Summarizer:
+    """Straight to an OpenAI port on this machine: a hub's own API (with a peer key from `keys create`, sent as a
+    bearer token) or a model server it started. Loopback only: file text must not leave this machine."""
     from urllib.parse import urlparse
 
     host = (urlparse(base_url).hostname or "").lower()
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError(f"{base_url} is not a loopback address; summaries only go to a model on this machine")
-    return openai_summarizer(model, base_url.rstrip("/") + "/v1/chat/completions", None, timeout)
+    return openai_summarizer(model, base_url.rstrip("/") + "/v1/chat/completions",
+                             {"Authorization": f"Bearer {key}"} if key else None, timeout)

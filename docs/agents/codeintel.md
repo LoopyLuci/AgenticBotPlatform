@@ -84,6 +84,11 @@ content hash, smallest files first. One tool-less chat call per file: the model 
 `ci_summaries`, keyed by path and hash, so a re-run only covers new or changed files; `outline` shows a file's summary
 under its header. Nothing summarizes on its own: a run is started by hand.
 
+`--via` picks the route: `hub` (default, the ModelMistress client), `mm` (the hub's own OpenAI API with a peer key from
+the hub's `key.create`, in `MODELMISTRESS_URL` and `MODELMISTRESS_KEY`; keep the key in the environment only), `abp`
+(a running ABP's relay) or `server` (a model server's port on this machine). `mm` and `server` refuse non-loopback
+addresses. A failed file is not stored, so a re-run retries it; the run prints each failure's reason.
+
 Known limits: references and callers resolve by name plus import links, not types (`x.run()` cannot tell which class's `run`;
 the answer says when a name is ambiguous); the bundled Kotlin grammar mis-parses `object Name { ... }` blocks; dynamic
 dispatch, re-exports through `__init__`, star imports and non-Python/JS import resolution are not followed.

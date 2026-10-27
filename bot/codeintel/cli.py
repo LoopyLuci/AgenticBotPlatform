@@ -11,7 +11,7 @@
     pack TASK [--budget N]       a budgeted context bundle for a task
     stats                        index size, parsers, languages, per-tool token counters
     catalog [FOLDER] [--reason R] every listed file: indexed or only catalogued (and why), broken Markdown links
-    summarize --model M [FOLDER] [--limit N] [--via hub|abp]   local-model summaries of new or changed text files
+    summarize --model M [FOLDER] [--limit N] [--via hub|mm|abp|server]   local-model summaries of new or changed text files
     bench                        tokens: grep + read_file versus these tools, for questions about ABP's own code
 """
 
@@ -55,10 +55,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("catalog"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--reason", default="")
     p = sub.add_parser("summarize"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--model", required=True)
     p.add_argument("--limit", type=int, default=50); p.add_argument("--budget-s", type=float, default=600.0)
-    p.add_argument("--via", choices=("hub", "abp", "server"), default="hub",
-                   help="abp: through the running ABP's relay (token from ABP_DASHBOARD_TOKEN or this install's .env); "
+    p.add_argument("--via", choices=("hub", "mm", "abp", "server"), default="hub",
+                   help="mm: the ModelMistress hub's own API with a peer key (MODELMISTRESS_URL, MODELMISTRESS_KEY); "
+                        "abp: through the running ABP's relay (token from ABP_DASHBOARD_TOKEN or this install's .env); "
                         "server: straight to a model server's OpenAI port on this machine (--url)")
-    p.add_argument("--url", default="", help="with --via server: the server's base address, e.g. http://127.0.0.1:59141")
+    p.add_argument("--url", default="", help="with --via server or mm: the base address, e.g. http://127.0.0.1:59141")
     sub.add_parser("bench")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
@@ -87,21 +88,27 @@ def main(argv: list[str] | None = None) -> int:
             from bot.codeintel import summaries
 
             tools.ensure(root)
-            if args.via == "abp":
-                import os
+            import os
 
+            if args.via == "abp":
                 from bot.dashboard_client import default_connection
 
                 base, token = default_connection()
                 summarizer = summaries.relay_summarizer(args.model, base, os.environ.get("ABP_DASHBOARD_TOKEN") or token)
-            elif args.via == "server":
-                summarizer = summaries.server_summarizer(args.model, args.url)
+            elif args.via in ("server", "mm"):
+                url = args.url or (os.environ.get("MODELMISTRESS_URL", "") if args.via == "mm" else "")
+                key = os.environ.get("MODELMISTRESS_KEY", "")
+                if args.via == "mm" and not (url and key):
+                    raise tools.CodeIntelError("--via mm needs MODELMISTRESS_URL (or --url) and MODELMISTRESS_KEY, "
+                                               "a peer key from the hub's key.create")
+                summarizer = summaries.server_summarizer(args.model, url, key=key)
             else:
                 summarizer = summaries.modelmistress_summarizer(args.model)
             out = summaries.summarize(root, summarizer, model=args.model,
                                       prefix=args.folder, limit=args.limit, budget_s=args.budget_s)
             print(json.dumps(out) if args.json else f"{out['summarized']} summarized, {len(out['failed'])} failed, "
-                  f"{out['pending']} pending in {out['seconds']}s")
+                  f"{out['pending']} pending in {out['seconds']}s"
+                  + "".join(f"\n  {p}: {e}" for p, e in out["errors"].items()))
             return 0
         if args.cmd == "catalog":
             res = tools.catalog_report(root, args.folder, reason=args.reason, **kw)

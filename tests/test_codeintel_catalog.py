@@ -211,7 +211,7 @@ def test_summaries_are_per_version_and_shown_in_outline(tmp_path):
         return "  A file\nthat does   things.  " if path == "a.sash" else ""
 
     out = summaries.summarize(root, fake, model="m")
-    assert out == {"summarized": 1, "failed": ["b.md"], "pending": 1, "seconds": out["seconds"]}
+    assert out == {"summarized": 1, "failed": ["b.md"], "errors": {"b.md": "empty answer"}, "pending": 1, "seconds": out["seconds"]}
     assert ("a.sash", "fun f() { }\n") in seen
     assert "summary: A file that does things." in tools.outline(root, "a.sash").text
     put(root, "a.sash", "fun f() { }\nfun g() { }\n")
@@ -318,3 +318,5 @@ def test_server_summarizer_is_loopback_only(monkeypatch):
     assert sent["url"] == "http://127.0.0.1:59141/v1/chat/completions" and sent["headers"] == {}
     with pytest.raises(ValueError):
         summaries.server_summarizer("qwen", "http://203.0.113.5:8080")
+    summaries.server_summarizer("qwen", "http://127.0.0.1:57665", key="mmk_x")("x.sash", "t")
+    assert sent["headers"] == {"Authorization": "Bearer mmk_x"}
