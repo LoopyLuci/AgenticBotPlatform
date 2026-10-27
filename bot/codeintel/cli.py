@@ -10,6 +10,8 @@
     impact [PATH ...|-]          symbols, callers and tests touched; with no argument, `git diff` of the root
     pack TASK [--budget N]       a budgeted context bundle for a task
     stats                        index size, parsers, languages, per-tool token counters
+    catalog [FOLDER] [--reason R] every listed file: indexed or only catalogued (and why), broken Markdown links
+    summarize --model M [FOLDER] [--limit N]   local-model summaries of new or changed text files (ModelMistress)
     bench                        tokens: grep + read_file versus these tools, for questions about ABP's own code
 """
 
@@ -50,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--budget", type=int, default=4000)
     p = sub.add_parser("impact"); p.add_argument("paths", nargs="*")
     sub.add_parser("stats")
+    p = sub.add_parser("catalog"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--reason", default="")
+    p = sub.add_parser("summarize"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--model", required=True)
+    p.add_argument("--limit", type=int, default=50); p.add_argument("--budget-s", type=float, default=600.0)
     sub.add_parser("bench")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
@@ -74,7 +79,18 @@ def main(argv: list[str] | None = None) -> int:
             report = bench.run(root)
             print(json.dumps(report, indent=2) if args.json else bench.render(report))
             return 0
-        if args.cmd == "outline":
+        if args.cmd == "summarize":
+            from bot.codeintel import summaries
+
+            tools.ensure(root)
+            out = summaries.summarize(root, summaries.modelmistress_summarizer(args.model), model=args.model,
+                                      prefix=args.folder, limit=args.limit, budget_s=args.budget_s)
+            print(json.dumps(out) if args.json else f"{out['summarized']} summarized, {len(out['failed'])} failed, "
+                  f"{out['pending']} pending in {out['seconds']}s")
+            return 0
+        if args.cmd == "catalog":
+            res = tools.catalog_report(root, args.folder, reason=args.reason, **kw)
+        elif args.cmd == "outline":
             res = tools.outline(root, args.target[0], **kw)
         elif args.cmd == "find":
             res = tools.find_symbol(root, args.target[0], kind=args.kind, **kw)

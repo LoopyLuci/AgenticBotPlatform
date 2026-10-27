@@ -27,11 +27,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from bot.codeintel import indexer, store
+from bot.codeintel import catalog, indexer, store, summaries
 
 CHARS_PER_TOKEN = 3.5
 FRESH_TTL_S = 2.0
-CONTAINERS = ("class", "struct", "interface", "trait", "impl", "enum", "module", "namespace")
+CONTAINERS = ("class", "struct", "interface", "trait", "impl", "enum", "module", "namespace", "section")
 
 _fresh: dict[str, float] = {}
 _fresh_lock = threading.Lock()
@@ -246,6 +246,9 @@ def outline(root: Path, path: str, max_tokens: int = 1500) -> Result:
         by_id = {r["id"]: r for r in rows}
         full_tokens = est_tokens("x" * int(f["size"]))
         lines = [f"{rel}  [{f['lang'] or 'text'}, {f['lines']} lines, ~{full_tokens} tokens if read whole]"]
+        summary = summaries.summary_of(conn, rel)
+        if summary:
+            lines.append(f"summary: {summary}")
         shown = [r for r in rows if _visible(by_id, r)]
         lines += [_outline_line(r) for r in shown]
         if not shown:
@@ -940,6 +943,18 @@ def _fit_lines(lines: list[str], budget_tokens: int) -> str:
 
 
 # ---------------------------------------------------------------- stats / usage
+def catalog_report(root: Path, folder: str = "", reason: str = "", max_tokens: int = 2500) -> Result:
+    """Every listed file under `folder`: counts by status, per entry, the files only catalogued and why, broken links."""
+    root, conn = _open(root)
+    try:
+        ensure(root)
+        prefix = "" if folder in ("", ".") else _rel(root, folder)
+        lines, data = catalog.report(conn, root, prefix, reason)
+        return _result(root, "catalog", lines, max_tokens, data, "narrow the folder, filter with reason, or raise max_tokens")
+    finally:
+        conn.close()
+
+
 def usage(root: Path) -> dict[str, dict]:
     root, conn = _open(root)
     try:

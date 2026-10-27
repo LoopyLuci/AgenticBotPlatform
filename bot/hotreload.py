@@ -284,7 +284,7 @@ DENYLIST: frozenset[str] = frozenset({
     # module state, agent_tools.py registers its tools at import time, and the API registers its routes once.
     "bot.codeintel.store", "bot.codeintel.indexer", "bot.codeintel.parsers", "bot.codeintel.treesitter", "bot.codeintel.tools",
     "bot.codeintel.agent_tools", "bot.codeintel.roots", "bot.codeintel.bench", "bot.codeintel.cli", "bot.codeintel.__main__",
-    "bot.dashboard.codeintel_api",
+    "bot.codeintel.textparsers", "bot.codeintel.catalog", "bot.codeintel.summaries", "bot.dashboard.codeintel_api",
     # Memory graph: tools.py registers memory_relevant at import time; the rest is imported lazily by the trace hook.
     "bot.memory_graph.tools", "bot.memory_graph.builder", "bot.memory_graph.recall", "bot.memory_graph.settings",
     "bot.memory_graph.store", "bot.memory_graph.tasktype",

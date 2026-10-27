@@ -5,6 +5,7 @@ enter); otherwise a walk that honours the root .gitignore in a simple way. Vendo
 either way (node_modules, vendor, dist, build, *.min.js, *_pb2.py, files that say they are generated).
 
 Incremental: a file is re-read only when its size or mtime changed, and re-parsed only when its content hash did.
+A full update also refreshes the catalog (bot/codeintel/catalog.py): a row for every listed file, parsed or not.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
-from bot.codeintel import parsers, store
+from bot.codeintel import catalog, parsers, store
 
 MAX_FILE_BYTES = 1_000_000
 MAX_FILES = 40_000
@@ -106,12 +107,17 @@ def _walk_files(root: Path) -> list[str]:
     return out
 
 
-def candidate_files(root: Path) -> list[str]:
+def all_files(root: Path) -> list[str]:
+    """Every repository-relative file the listing returns (git's, else the walk), before any filtering."""
+    listed = _git_files(root)
+    return listed if listed is not None else _walk_files(root)
+
+
+def candidate_files(root: Path, listed: Optional[list[str]] = None) -> list[str]:
     """Repository-relative source files worth indexing, sorted."""
     suffixes = parsers.source_suffixes()
-    listed = _git_files(root)
     if listed is None:
-        listed = _walk_files(root)
+        listed = all_files(root)
     out = []
     for rel in listed:
         parts = rel.split("/")
@@ -134,6 +140,7 @@ class _Resolver:
         self.paths = set(paths)
         self.mod: dict[str, str] = {}
         self.suffix: dict[str, Optional[str]] = {}
+        self.sash_tail: Optional[dict[str, Optional[str]]] = None
         for p in paths:
             if not p.endswith((".py", ".pyi")):
                 continue
@@ -185,9 +192,40 @@ class _Resolver:
                 return target + ext
         return None
 
+    def _sash(self, file: str, module: str) -> Optional[str]:
+        """`import lib.util` -> lib/util.sash in the importing file's folder or the nearest ancestor that has it,
+        else the one indexed file that ends with that path (none when several do)."""
+        rel = module.replace(".", "/") + ".sash"
+        folder = PurePosixPath(file).parent
+        for base in [folder, *folder.parents]:
+            candidate = rel if str(base) in ("", ".") else f"{base.as_posix()}/{rel}"
+            if candidate in self.paths:
+                return candidate
+        if self.sash_tail is None:
+            self.sash_tail = {}
+            for p in self.paths:
+                if p.endswith(".sash"):
+                    parts = p.split("/")
+                    for i in range(len(parts)):
+                        key = "/".join(parts[i:])
+                        self.sash_tail[key] = None if key in self.sash_tail and self.sash_tail[key] != p else p
+        return self.sash_tail.get(rel)
+
+    def _link(self, file: str, target: str) -> Optional[str]:
+        base = PurePosixPath(file).parent
+        path = os.path.normpath(target.lstrip("/") if target.startswith("/") else str(base / target)).replace("\\", "/")
+        for t in (path, path.rstrip("/") + "/README.md"):
+            if t in self.paths:
+                return t
+        return None
+
     def resolve(self, file: str, module: str, name: str, level: int) -> Optional[str]:
         if file.endswith((".py", ".pyi")):
             hit = self._py(file, module, name, level)
+        elif file.endswith(".sash"):
+            hit = self._sash(file, module)
+        elif file.endswith((".md", ".markdown")):
+            hit = self._link(file, module)
         else:
             hit = self._js(file, module)
         return hit if hit != file else None
@@ -374,7 +412,8 @@ def update(root: Path, *, force: bool = False, only: Optional[list[str]] = None,
                           if os.path.splitext(p)[1].lower() in parsers.source_suffixes()]
                 listing = wanted
             else:
-                listing = candidate_files(root)
+                everything = all_files(root)
+                listing = candidate_files(root, everything)
             next_id = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM ci_symbols").fetchone()[0]
             deadline = started + BUILD_BUDGET_S
             seen: set[str] = set()
@@ -429,6 +468,9 @@ def update(root: Path, *, force: bool = False, only: Optional[list[str]] = None,
                 _rebuild_testmap(conn)
                 store.set_meta(conn, "resolved", "1")
             _load_coverage(conn, root)
+            if only is None and stats["complete"]:
+                stats["catalog_complete"] = catalog.build(conn, root, everything, deadline)
+                stats["catalogued"] = conn.execute("SELECT COUNT(*) FROM ci_catalog").fetchone()[0]
             store.set_meta(conn, "updated", str(time.time()))
             conn.commit()
             stats["files"] = conn.execute("SELECT COUNT(*) FROM ci_files").fetchone()[0]
