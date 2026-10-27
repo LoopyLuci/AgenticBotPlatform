@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1111,
+  "route": 1112,
   "setting": 72
  },
  "entries": [
@@ -3067,6 +3067,16 @@
    "label": "Codeintel Callers",
    "network": false,
    "where": "GET /api/codeintel/callers"
+  },
+  {
+   "cloud": false,
+   "desc": "API (codeintel)",
+   "id": "route:GET /api/codeintel/catalog",
+   "keywords": "codeintel",
+   "kind": "route",
+   "label": "Codeintel Catalog",
+   "network": false,
+   "where": "GET /api/codeintel/catalog"
   },
   {
    "cloud": false,

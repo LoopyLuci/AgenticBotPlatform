@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1111 |
+| route | 1112 |
 | module | 10 |
 | setting | 72 |
 
@@ -474,9 +474,10 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/cluster/runs/{rid}/start` Cluster Run Start
 - `PUT /api/cluster/offer` Cluster Offer Set
 
-### codeintel (10)
+### codeintel (11)
 
 - `GET /api/codeintel/callers` Codeintel Callers
+- `GET /api/codeintel/catalog` Codeintel Catalog
 - `GET /api/codeintel/find` Codeintel Find
 - `GET /api/codeintel/outline` Codeintel Outline
 - `GET /api/codeintel/read` Codeintel Read
