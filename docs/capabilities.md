@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1112 |
+| route | 1113 |
 | module | 10 |
 | setting | 72 |
 
@@ -488,7 +488,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/codeintel/index` Codeintel Index
 - `POST /api/codeintel/pack` Codeintel Pack
 
-### conductor (19)
+### conductor (20)
 
 - `GET /api/conductor/buildcache` Conductor Buildcache
 - `GET /api/conductor/escalations` Conductor Escalations
@@ -502,6 +502,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/conductor/reviews` Conductor Reviews
 - `GET /api/conductor/status` Conductor Status
 - `POST /api/conductor/knowledge/export` Conductor Knowledge Export
+- `POST /api/conductor/knowledge/km` Conductor Knowledge Km
 - `POST /api/conductor/plan` Conductor Plan
 - `POST /api/conductor/queue/{queue_id}/approve` Conductor Approve
 - `POST /api/conductor/queue/{queue_id}/push` Conductor Push

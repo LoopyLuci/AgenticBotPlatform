@@ -226,6 +226,16 @@ and rules; the context vault capture (`navctx`) is unchanged. `POST /api/conduct
 switches (`enabled`, `for_planner`, `for_workers`, `owner_rules`, `to_memoryfabric`); the Workspace's Factory knowledge card
 toggles each one (audited).
 
+**Project knowledge modules (`projectkm.py`).** The repository itself becomes a ModelMistress `mmkm/1` knowledge module:
+`project.<repo>.knowledge` (kind `memory`: one chunk per rule in AGENTS.md / CLAUDE.md / CONTRIBUTING.md, each module's
+docstring head as its contract, and the review findings and failing rules from the lessons) and `project.<repo>.lessons`
+(kind `data`: rejected attempts with their later fix as `pending` training records). Versions are immutable (a changed
+rebuild writes the next patch version with `parent` set) and every payload hash is checked on load, so a tampered KM is
+refused. Each task gets the chunks that match its files and words, within `km_chars`; the planner gets the slice for the
+goal. Switch: `conductor.knowledge.project_km`. `POST /api/conductor/knowledge/km` builds it on demand.
+The factory bench measures it: `python -m abp_agenteval factory run ... --knowledge km` builds the KM from each task's own
+base commit (so it cannot hold the answer; lessons are left out for the same reason) and adds the slice to the prompt.
+
 ## Settings (`conductor:` in config)
 
 `model`, `review_model` (local refs; empty = the first local models the router offers), `max_tasks` (8), `max_rejections` (2),

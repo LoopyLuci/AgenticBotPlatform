@@ -32,8 +32,10 @@ DEFAULTS: dict[str, Any] = {"enabled": True,          # record lessons at all
                             "for_workers": True,      # a worker's prompt gets earlier outcomes of similar tasks
                             "owner_rules": True,      # the memory fabric's standing rules go to the planner too
                             "to_memoryfabric": True,  # lessons also go into the memory fabric's knowledge base (the graph)
+                            "project_km": True,       # the repo's mmkm/1 project knowledge module (projectkm.py) goes into prompts
+                            "km_chars": 1500,
                             "planner_chars": 2500, "task_chars": 1500, "max_lessons": 6}
-SWITCHES = ("enabled", "for_planner", "for_workers", "owner_rules", "to_memoryfabric")
+SWITCHES = ("enabled", "for_planner", "for_workers", "owner_rules", "to_memoryfabric", "project_km")
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL DEFAULT '', plan_id TEXT NOT NULL,
     task_key TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', title TEXT NOT NULL, files TEXT NOT NULL DEFAULT '[]',
@@ -232,3 +234,13 @@ def export_dataset(path: Path, repo: str = "") -> dict:
                                  "rejection": r["text"], "rules": r["rules"], "fixed": ok["text"] if ok else ""}) + "\n")
             n += 1
     return {"path": str(path), "rows": n}
+
+
+def km_block(root: Path, repo: str, text: str, files: Optional[list] = None, cfg: Any = None) -> str:
+    """The project knowledge module's chunks for a task (conventions, module contracts, review findings); "" when off."""
+    s = settings(cfg)
+    if not s["project_km"]:
+        return ""
+    from bot.conductor import projectkm
+
+    return projectkm.km_block(Path(root), repo, text, files, budget_chars=int(s["km_chars"]), lessons=bool(s["enabled"]))

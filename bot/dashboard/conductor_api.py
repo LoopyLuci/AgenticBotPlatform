@@ -17,7 +17,8 @@
     GET  /api/conductor/knowledge           LF7: lesson counts, failing review rules and the conductor.knowledge switches
     GET  /api/conductor/knowledge/lessons?repo=&outcome=   the recorded lessons (newest first)
     GET  /api/conductor/knowledge/recall?repo=&text=&files=&goal=   what a worker (text) and the planner (goal) would be given
-    PUT  /api/conductor/knowledge/settings  {"enabled"?, "for_planner"?, "for_workers"?, "owner_rules"?, "to_memoryfabric"?}
+    POST /api/conductor/knowledge/km        build (or reuse) the repo's mmkm/1 project knowledge modules; says what is in them
+    PUT  /api/conductor/knowledge/settings  {"enabled"?, "for_planner"?, "for_workers"?, "owner_rules"?, "to_memoryfabric"?, "project_km"?}
                                             switch each part on or off (audited; the next run reads it)
     GET  /api/conductor/buildcache          LF8: the build/test cache switches and this process's hits, misses and seconds saved
     PUT  /api/conductor/buildcache/settings {"tests"?, "wheels"?, "venvs"?, "cargo"?}
@@ -27,6 +28,7 @@ Reading uses the dashboard's normal auth; planning, reviewing and deciding need 
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
@@ -183,7 +185,10 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         from bot.conductor import knowledge
 
         fl = [f.strip() for f in files.split(",") if f.strip()]
+        from bot.envfile import PROJECT_ROOT
+
         return {"task": knowledge.task_block(repo, text, "", fl) if text or fl else "",
+                "km": knowledge.km_block(PROJECT_ROOT, repo, text, fl) if text or fl else "",
                 "planner": knowledge.planner_block(repo, goal) if goal else ""}
 
     @app.put("/api/conductor/knowledge/settings", dependencies=write)
@@ -243,3 +248,14 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         out = knowledge.export_dataset(state_dir("conductor") / "datasets" / "factory-lessons.jsonl", str((body or {}).get("repo") or ""))
         db.log_audit(actor="dashboard", action="conductor_knowledge_export", detail=f"{out['rows']} rows")
         return out
+
+    @app.post("/api/conductor/knowledge/km", dependencies=write)
+    def conductor_knowledge_km(body: dict = Body(default={})):
+        from bot import db
+        from bot.conductor import knowledge, projectkm
+        from bot.envfile import PROJECT_ROOT
+
+        info = projectkm.build(PROJECT_ROOT, str((body or {}).get("repo") or "abp"), projectkm.km_dir(),
+                               lessons=bool(knowledge.settings()["enabled"]))
+        db.log_audit(actor="dashboard", action="conductor_knowledge_km", detail=f"{info['chunks']} chunks")
+        return {**info, "memory": Path(info["memory"]).name, **({"data": Path(info["data"]).name} if info.get("data") else {})}

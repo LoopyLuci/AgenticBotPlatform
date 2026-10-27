@@ -18098,6 +18098,62 @@
     "summary": "Conductor Knowledge Export"
    }
   },
+  "/api/conductor/knowledge/km": {
+   "post": {
+    "operationId": "conductor_knowledge_km_api_conductor_knowledge_km_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Conductor Knowledge Km"
+   }
+  },
   "/api/conductor/knowledge/lessons": {
    "get": {
     "operationId": "conductor_knowledge_lessons_api_conductor_knowledge_lessons_get",
