@@ -11,7 +11,7 @@
     pack TASK [--budget N]       a budgeted context bundle for a task
     stats                        index size, parsers, languages, per-tool token counters
     catalog [FOLDER] [--reason R] every listed file: indexed or only catalogued (and why), broken Markdown links
-    summarize --model M [FOLDER] [--limit N]   local-model summaries of new or changed text files (ModelMistress)
+    summarize --model M [FOLDER] [--limit N] [--via hub|abp]   local-model summaries of new or changed text files
     bench                        tokens: grep + read_file versus these tools, for questions about ABP's own code
 """
 
@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("catalog"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--reason", default="")
     p = sub.add_parser("summarize"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--model", required=True)
     p.add_argument("--limit", type=int, default=50); p.add_argument("--budget-s", type=float, default=600.0)
+    p.add_argument("--via", choices=("hub", "abp"), default="hub",
+                   help="abp: through the running ABP's relay (token from ABP_DASHBOARD_TOKEN or this install's .env)")
     sub.add_parser("bench")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
@@ -83,7 +85,16 @@ def main(argv: list[str] | None = None) -> int:
             from bot.codeintel import summaries
 
             tools.ensure(root)
-            out = summaries.summarize(root, summaries.modelmistress_summarizer(args.model), model=args.model,
+            if args.via == "abp":
+                import os
+
+                from bot.dashboard_client import default_connection
+
+                base, token = default_connection()
+                summarizer = summaries.relay_summarizer(args.model, base, os.environ.get("ABP_DASHBOARD_TOKEN") or token)
+            else:
+                summarizer = summaries.modelmistress_summarizer(args.model)
+            out = summaries.summarize(root, summarizer, model=args.model,
                                       prefix=args.folder, limit=args.limit, budget_s=args.budget_s)
             print(json.dumps(out) if args.json else f"{out['summarized']} summarized, {len(out['failed'])} failed, "
                   f"{out['pending']} pending in {out['seconds']}s")

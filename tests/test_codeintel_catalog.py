@@ -237,11 +237,16 @@ def test_summarize_cuts_long_input_and_survives_errors(tmp_path):
         if path == "boom.md":
             raise RuntimeError("model down")
         got[path] = text
-        return "ok"
+        return "ok [... cut ...]"
 
     out = summaries.summarize(root, fake, max_input=100)
     assert out["summarized"] == 1 and out["failed"] == ["boom.md"]
     assert got["long.md"].endswith("[... cut ...]") and len(got["long.md"]) == 100 + len("\n[... cut ...]")
+    conn = store.connect(root)
+    try:
+        assert conn.execute("SELECT summary FROM ci_summaries").fetchone()["summary"] == "ok (From the first 100 characters.)"
+    finally:
+        conn.close()
 
 
 def test_modelmistress_summarizer_sends_one_tool_less_call(monkeypatch):
@@ -271,3 +276,26 @@ def test_cli_catalog(tmp_path):
         assert cli.main(["--root", str(root), "catalog"]) == 0
     text = buf.getvalue()
     assert "catalog of .: 2 files" in text and "pic.png [binary" in text
+
+
+def test_relay_summarizer_posts_to_the_abp_relay(monkeypatch):
+    import httpx
+
+    sent = {}
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Via relay."}}]}
+
+    def post(url, **kw):
+        sent.update(url=url, **kw)
+        return Resp()
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert summaries.relay_summarizer("qwen", "http://127.0.0.1:8787/", "tok")("x.md", "t") == "Via relay."
+    assert sent["url"] == "http://127.0.0.1:8787/api/modelmistress/v1/chat/completions"
+    assert sent["headers"] == {"X-Dashboard-Token": "tok"} and "tools" not in sent["json"]
+    assert sent["json"]["model"] == "qwen" and sent["json"]["messages"][1]["content"].startswith("PATH: x.md\n")
