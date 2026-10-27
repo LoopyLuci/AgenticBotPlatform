@@ -83,9 +83,12 @@ def test_export_pairs_a_rejection_with_the_later_fix(tmp_path):
     assert out["rows"] == 1 and rows[0]["rejection"] == "dropped --verbose" and rows[0]["fixed"].startswith("kept --verbose")
 
 
-def test_a_second_factory_run_is_given_what_the_first_run_learned(repo, tmp_path):  # noqa: F811
+def test_a_second_factory_run_is_given_what_the_first_run_learned(repo, tmp_path, monkeypatch):  # noqa: F811
     """Run 1: the worker drops a CLI flag twice; the reviewer rejects and the task escalates. Run 2 on a similar goal: the
     planner's prompt carries run 1's plan and the failing rule, and the worker's first prompt carries the earlier rejection."""
+    from bot.conductor import projectkm as _pk
+
+    monkeypatch.setattr(_pk, "km_dir", lambda: tmp_path / "km")
     plan_prompts: list[str] = []
     worker_prompts: list[str] = []
 
@@ -102,6 +105,14 @@ def test_a_second_factory_run_is_given_what_the_first_run_learned(repo, tmp_path
         Path(wt, "tests/test_cli.py").write_text(TEST_CLI + "\n# touched\n", encoding="utf-8", newline="\n")
         return "changed the flags"
 
+    from bot.conductor import projectkm
+    from tests.test_conductor import git
+
+    (Path(repo) / "AGENTS.md").write_text("# Rules\n\n## Conventions\n\n- Never drop a CLI flag of the status command: users script it.\n",
+                                          encoding="utf-8")
+    git(repo, "add", "AGENTS.md")
+    git(repo, "commit", "-q", "-m", "rules")
+    projectkm._cache.clear()
     llm.set_completer(model)
     board = LocalBoard(tmp_path / "b.db")
     coordination.set_board(board)
@@ -121,6 +132,9 @@ def test_a_second_factory_run_is_given_what_the_first_run_learned(repo, tmp_path
         first = worker_prompts[first_worker_prompt]
         assert "earlier Factory runs learned" in first and "[rejected] Change the status flags" in first and "--verbose" in first
         assert knowledge.stats("abp")["by_outcome"]["rejected"] == 4
+        # the project knowledge module (mmkm/1) reached both: the AGENTS.md rule about the status command's flags
+        assert "project's knowledge module" in first and "Never drop a CLI flag" in first
+        assert "Never drop a CLI flag" in plan_prompts[-1]
     finally:
         board.close()
 

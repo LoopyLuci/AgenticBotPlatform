@@ -205,7 +205,7 @@ def test_a_wrong_edit_is_a_wrong_edit(repo, tmp_path):
 def test_tool_calls_that_fail_and_no_edit_are_a_bad_tool_call(repo, tmp_path):
     broken = [Call("edit_file", {"path": "calc.py", "old_string": "not in the file", "new_string": "x"}),
               Call("edit_file", {"path": "calc.py", "old_string": "also missing", "new_string": "y"}), Say("done")]
-    row = run(repo, tmp_path, broken)
+    row = run(repo, tmp_path, broken, fix_rounds=0)       # a retry would replay the same broken script
     assert not row["passed"] and row["failure_kind"] == "bad tool call"
     assert row["tool_errors"] == 2 and row["tool_calls"] == 3
 
@@ -253,8 +253,8 @@ def test_a_model_that_hangs_is_a_timeout_and_the_worktree_is_still_removed(repo,
 
 
 def test_a_task_that_needs_a_shell_is_skipped_without_one(repo, tmp_path):
-    row = run(repo, tmp_path, [Say("x")], task=make_task(repo, needs_shell=True))
-    assert row["limited"] and not row["passed"] and "needs a shell" in row["error"]
+    row = run(repo, tmp_path, [Say("x")], task=make_task(repo, needs_shell=True), script_tool=False)
+    assert row["limited"] and not row["passed"] and "needs a command" in row["error"]
     summary = fb.summarize_rows([row])
     assert summary["measured"] == 0 and summary["limited"] == 1
 
@@ -427,3 +427,86 @@ def test_without_a_shell_the_agent_gets_run_tests_and_repo_map():
     assert any(r["decision"] == "allow" and r["tool"] == "run_tests" for r in cfg["permissions"]["rules"])
     boxed = fb.agent_settings(model="m", shell="sandbox")
     assert "run_tests" in {r["tool"] for r in boxed["permissions"]["rules"] if r["decision"] == "deny"}
+
+
+# ------------------------------------------------------------------------------- self-check and bounded fix rounds
+
+def run_rounds(repo, tmp_path, scripts, **kw):
+    """A run whose agent turns follow `scripts` in order (one script per turn); returns the row and each turn's prompt."""
+    turns: list = []
+
+    class Recording(ScriptedTransport):
+        async def send(self, **send_kw):
+            if not self.calls:
+                turns.append(" ".join(str(m.get("content")) for m in send_kw.get("history") or [] if isinstance(m, dict)))
+            return await super().send(**send_kw)
+
+    def factory(_t):
+        script = scripts[min(len(turns), len(scripts) - 1)]
+        touched = sorted({s.args["path"] for s in script if isinstance(s, Call) and s.tool == "edit_file"})
+        return Recording([Call("read_file", {"path": p}) for p in touched] + list(script))
+
+    row = fb.run_task(make_task(repo), factory, model="scripted", python=sys.executable, repo=repo, workdir=tmp_path / "work", **kw)
+    return row, turns
+
+
+LINT = Call("edit_file", {"path": "calc.py", "old_string": "def add", "new_string": "import os\n\n\ndef add"})
+UNLINT = Call("edit_file", {"path": "calc.py", "old_string": "import os\n\n\ndef add", "new_string": "def add"})
+
+
+def test_a_lint_problem_goes_back_to_the_agent_and_the_fix_round_passes(repo, tmp_path):
+    row, turns = run_rounds(repo, tmp_path, [[LINT, FIX, Say("done")], [UNLINT, Say("removed the import")]])
+    assert row["passed"] and row["fix_rounds"] == 1, row
+    assert row["self_check"][0].startswith("ruff reports") and len(turns) == 2
+    assert "F401" in turns[1] and "You already changed: calc.py" in turns[1], turns[1][-1500:]
+
+
+def test_no_change_is_reported_back_and_a_second_turn_can_still_fix_it(repo, tmp_path):
+    row, turns = run_rounds(repo, tmp_path, [[Say("I looked around.")], [FIX, Say("fixed")]])
+    assert row["passed"] and row["fix_rounds"] == 1 and "No file in the checkout changed" in turns[1]
+
+
+def test_fix_rounds_are_bounded_and_can_be_off(repo, tmp_path):
+    row, turns = run_rounds(repo, tmp_path, [[LINT, FIX, Say("done")], [Say("I will not change anything")]], fix_rounds=2)
+    assert not row["passed"] and row["failure_kind"] == "lint" and row["fix_rounds"] == 2 and len(turns) == 3
+    row, turns = run_rounds(repo, tmp_path, [[LINT, FIX, Say("done")]], fix_rounds=0)
+    assert row["fix_rounds"] == 0 and len(turns) == 1 and row["failure_kind"] == "lint"
+
+
+def test_the_self_check_runs_only_tests_the_agent_can_see(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_calc.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_new.py").write_text("x = 1\n", encoding="utf-8")
+    assert fb.visible_tests(tmp_path, ["calc.py", "tests/test_new.py", "other.py"]) == ["tests/test_new.py", "tests/test_calc.py"]
+
+
+# ------------------------------------------------------------------------------- run_script for tasks that need a command
+
+def test_a_command_task_gets_run_script_in_the_confined_sandbox(repo, tmp_path, monkeypatch):
+    cfg = fb.agent_settings(model="m", script_tool=True)
+    assert cfg["sandbox"]["backend"] == "windows_job" and cfg["sandbox"]["network"] == "none"
+    denied = {r["tool"] for r in cfg["permissions"]["rules"] if r["decision"] == "deny"}
+    assert "run_script" not in denied and "run_shell" in denied
+    assert "sandbox" not in fb.agent_settings(model="m")
+    assert "run_script tool" in fb.build_prompt(make_task(repo), script_tool=True)
+
+    seen = {}
+
+    def stop(*a, **kw):
+        seen.update(kw)
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(fb, "script_tool_supported", lambda: True)
+    monkeypatch.setattr(fb, "drive_agent", stop)
+    row = fb.run_task(make_task(repo, needs_shell=True), lambda _t: None, model="m", python=sys.executable, repo=repo,
+                      workdir=tmp_path / "w")
+    assert seen["script_tool"] is True and not row["limited"]
+    monkeypatch.setattr(fb, "script_tool_supported", lambda: False)
+    assert fb.run_task(make_task(repo, needs_shell=True), lambda _t: None, model="m", python=sys.executable, repo=repo,
+                       workdir=tmp_path / "w2")["limited"]
+
+
+def test_the_knowledge_budget_is_a_share_of_the_context_and_comes_before_the_issue(repo):
+    assert fb.knowledge_budget(32768) == 1200 and fb.knowledge_budget(8192) == int(8192 * 0.03 * 4)
+    prompt = fb.build_prompt(make_task(repo), knowledge="Background from the project's knowledge module: x")
+    assert prompt.index("Background from") < prompt.index("## Issue")

@@ -288,7 +288,7 @@ DENYLIST: frozenset[str] = frozenset({
     # Memory graph: tools.py registers memory_relevant at import time; the rest is imported lazily by the trace hook.
     "bot.memory_graph.tools", "bot.memory_graph.builder", "bot.memory_graph.recall", "bot.memory_graph.settings",
     "bot.memory_graph.store", "bot.memory_graph.tasktype",
-    "bot.agent_runtime.run_tests", "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
+    "bot.agent_runtime.run_tests", "bot.agent_runtime.run_script", "bot.agent_runtime.repo_map", "bot.agent_runtime.ext_browser", "bot.agent_runtime.search_index",  # register their tools at import time; repo_map caches
     "bot.agent_runtime.small_model",  # holds the set of sessions already told that small-model mode is on
     "bot.agent_runtime.context_window",  # holds the learned chars-per-token ratio per model
     "bot.hotreload",  # never reload the reloader mid-cycle
@@ -402,7 +402,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.bot_instances",  # depends only on validators/personas — before pairing/memory, which import it at module scope
     "bot.model_pricing",
     "bot.capacity.classify", "bot.capacity.handoff", "bot.capacity.routing", "bot.capacity.follow",  # pure functions over the governor's state; reached as module attributes
-    "bot.conductor.store", "bot.conductor.cache", "bot.conductor.testselect", "bot.conductor.buildcache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.knowledge", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run", "bot.conductor.isolated", "bot.conductor.grok_worker", "bot.conductor.difflint",  # the conductor: a connection per call, no state held in the modules
+    "bot.conductor.store", "bot.conductor.cache", "bot.conductor.testselect", "bot.conductor.buildcache", "bot.conductor.proof", "bot.conductor.llm", "bot.conductor.shards", "bot.conductor.navctx", "bot.conductor.knowledge", "bot.conductor.projectkm", "bot.conductor.planner", "bot.conductor.reviewer", "bot.conductor.integrator", "bot.conductor.pusher", "bot.conductor.confine", "bot.conductor.run", "bot.conductor.isolated", "bot.conductor.grok_worker", "bot.conductor.difflint",  # the conductor: a connection per call, no state held in the modules
     "bot.manager.store", "bot.manager.escalations", "bot.manager.digest", "bot.manager.checkin",  # the manager channel: reads the board/conductor/capacity; a connection per call, no state held in the modules
     "bot.localchat.store", "bot.localchat.speed", "bot.localchat.catalog",  # Local Chat: a connection per call, a speed file and a short catalog cache
     "bot.localchat.links",  # linked Local Chat sessions: functions over the store, nothing held

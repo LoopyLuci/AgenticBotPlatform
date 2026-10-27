@@ -5552,6 +5552,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/conductor/knowledge/km": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/knowledge/km",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/conductor/plan": {
   "body": true,
   "method": "POST",
@@ -12534,6 +12541,13 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/conductor/knowledge/export",
+  "path_params": [],
+  "query_params": []
+ },
+ "conductor_knowledge_km_api_conductor_knowledge_km_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/conductor/knowledge/km",
   "path_params": [],
   "query_params": []
  },
