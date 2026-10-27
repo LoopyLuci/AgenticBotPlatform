@@ -38,8 +38,15 @@ _STOP = frozenset("the and for with that this from into its are not can will one
                   "new file files code make makes should must have has was were been also only what which where".split())
 
 
+def _stem(w: str) -> str:
+    """A crude plural fold (flags -> flag, processes -> process), so a task and a rule that say the same thing match."""
+    if w.endswith("sses") or w.endswith("ies"):
+        return w[:-2]
+    return w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 4 else w
+
+
 def words(text: str) -> set[str]:
-    return {w for w in _WORD.findall(str(text or "").lower().replace("/", " ").replace(".", " ")) if w not in _STOP}
+    return {_stem(w) for w in _WORD.findall(str(text or "").lower().replace("/", " ").replace(".", " ")) if w not in _STOP}
 
 
 # ------------------------------------------------------------------ sources
@@ -257,36 +264,60 @@ def load(km_dir: Path) -> list[dict]:
 
 
 # ------------------------------------------------------------------ selection
-def select(chunks: list[dict], text: str, files: Optional[list] = None, *, budget_chars: int = 2500) -> list[dict]:
-    """Path matches first (a contract of a file the task names), then word overlap; critical rules always compete."""
+MAX_ITEMS = {"contract": 3, "convention": 3, "finding": 3, "review_rule": 3}
+
+
+def select(chunks: list[dict], text: str, files: Optional[list] = None, *, budget_chars: int = 2500, strict: bool = True) -> list[dict]:
+    """The chunks one task needs, within `budget_chars`.
+
+    strict (the default): a module contract only for a file the task names, or for a module in the same folder whose words
+    match the task well; a convention or finding only when it shares at least two words with the task; at most MAX_ITEMS per kind.
+    The 2026-10-26/27 bench runs got loosely related module descriptions instead, and they sent the model reading modules
+    the task never needed. strict=False keeps the earlier, looser ranking."""
     want, fset = words(text), {str(f).replace("\\", "/") for f in files or []}
+    # a sibling is a module in the same sub-package (bot/sandbox_ns/...), never just in the top-level package (bot/)
+    fdirs = {f.rsplit("/", 1)[0] for f in fset if f.count("/") >= 2}
     fwords = words(" ".join(fset))
     scored = []
     for c in chunks:
         cw = words(f"{c.get('title', '')} {c.get('text', '')}")
-        overlap = len(want & cw) / (1 + len(cw) ** 0.5)
-        path_hit = bool(fset & set(c.get("paths") or []))
-        near = bool(fwords & words(" ".join(c.get("paths") or []))) and c["kind"] == "contract"
-        score = (3.0 if path_hit else 0.0) + (0.6 if near else 0.0) + overlap + (0.5 if c["kind"] in ("review_rule", "finding") else 0.0)
-        if c["kind"] == "convention":
+        shared = want & cw
+        overlap = len(shared) / (1 + len(cw) ** 0.5)
+        paths = c.get("paths") or []
+        path_hit = bool(fset & set(paths))
+        kind = c["kind"]
+        if strict:
+            if kind == "contract":
+                sibling = any(p.rsplit("/", 1)[0] in fdirs for p in paths if "/" in p)
+                if not path_hit and not (sibling and overlap >= 0.6):
+                    continue
+            elif kind == "convention" and not path_hit and len(shared) < 2:
+                continue
+            elif kind in ("finding", "review_rule") and not path_hit and len(shared) < 2:
+                continue
+        near = bool(fwords & words(" ".join(paths))) and kind == "contract"
+        score = (3.0 if path_hit else 0.0) + (0.6 if near else 0.0) + overlap + (0.5 if kind in ("review_rule", "finding") else 0.0)
+        if kind == "convention":
             score += 0.3                     # the owner's rules beat a module's description at equal overlap
         if score > 0.35:
             scored.append((score, c))
     scored.sort(key=lambda sc: -sc[0])
-    out, used = [], 0
+    out, used, per = [], 0, {}
     for _s, c in scored:
-        if used + len(c["text"]) > budget_chars:
+        if used + len(c["text"]) > budget_chars or (strict and per.get(c["kind"], 0) >= MAX_ITEMS.get(c["kind"], 3)):
             continue
         out.append(c)
         used += len(c["text"])
+        per[c["kind"]] = per.get(c["kind"], 0) + 1
     return out
 
 
 def format_block(chosen: list[dict]) -> str:
+    """Framed as reference: phrased as "follow these" and placed after the task, it read as more instructions."""
     if not chosen:
         return ""
-    return "Project knowledge (from the project's knowledge module; follow these conventions and contracts):\n" + \
-        "\n".join(f"- {c['text'].strip()}" for c in chosen)
+    return ("Background from the project's knowledge module (reference only, not part of the task; use what fits and ignore "
+            "the rest):\n") + "\n".join(f"- {c['text'].strip()}" for c in chosen)
 
 
 _cache: dict[str, tuple[float, list[dict]]] = {}

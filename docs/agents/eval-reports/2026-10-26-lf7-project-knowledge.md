@@ -41,3 +41,32 @@ Five tasks flipped:
   whether the contracts help at all or only add tokens.
 
 Reports: run outside the repo (`bench-off.json`, `bench-km.json`); not committed.
+
+## Second round (2026-10-27) and what changed
+
+A second pair of runs: off 11/20, km 8/20 (r1: 8 and 9). Mean off 9.5, km 8.5. Per task across both pairs, km lost
+`sandbox-reused-pid` twice, and `sentinel-config-discovery`, `module-provider-secret` and `gate-registry-reader` once each. Some of
+those flips are a lint slip or an environment error (`PermissionError` on a test's temp folder) rather than the model doing worse.
+
+What the knowledge actually was: about 1.6k characters per task, mostly one-line descriptions of loosely related modules (for
+`sentinel-config-discovery`: the TUI connect screen, the local model server, model discovery, backups...). It came after the
+issue, under "follow these conventions and contracts". It added reading, not information: in the km runs the agent read
+and edited more (for example `sandbox-reused-pid`: 6 edits instead of 1, +10-30% tokens).
+
+Changes (branch `claude/lf7-km-bench`):
+- **Strict selection** (`projectkm.select`, the default): a module contract only for a file the issue names, or a module in the
+  same sub-package that matches the issue well; a convention or finding only when it shares at least two words with the issue;
+  at most 3 items per kind. Average knowledge per bench task fell from about 1,600 to about 260 characters; two tasks get none.
+- **Placement and framing:** the block now comes before the issue, as "background, reference only".
+- **Token share:** capped at 3% of the context window (1,200 characters at 32k).
+- **Self-check and fix rounds** (`factory run --fix-rounds`, default 2): after the agent's turn the bench checks that the edits
+  landed, the changed files parse and pass ruff, and the visible tests pass (tests the agent wrote, and `tests/test_<module>.py`
+  of each module it changed; never the judge's tests). It then gives the problems back for at most two more turns within
+  the task's time limit. Lint failures (4 and 3 tasks in two of the runs) are the direct target.
+- **Edit read-back:** `edit_file` and `multi_edit` read the file back after saving. A write that did not land is an error; a
+  Python file that no longer parses gets a warning naming the line.
+- **`sdk-regenerate-cluster-blobs` runs now:** a task that needs a command gets `run_script`. It runs only the repository's
+  generator scripts on an allowlist, with no arguments, and refuses unless the sandbox is a confining one (windows_job,
+  docker, wsl or ssh) with network "none". The bench sets windows_job with no network for it.
+
+These changes are not measured yet; the next bench rounds measure them.

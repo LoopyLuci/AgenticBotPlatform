@@ -133,7 +133,7 @@ def test_a_second_factory_run_is_given_what_the_first_run_learned(repo, tmp_path
         assert "earlier Factory runs learned" in first and "[rejected] Change the status flags" in first and "--verbose" in first
         assert knowledge.stats("abp")["by_outcome"]["rejected"] == 4
         # the project knowledge module (mmkm/1) reached both: the AGENTS.md rule about the status command's flags
-        assert "Project knowledge" in first and "Never drop a CLI flag" in first
+        assert "project's knowledge module" in first and "Never drop a CLI flag" in first
         assert "Never drop a CLI flag" in plan_prompts[-1]
     finally:
         board.close()

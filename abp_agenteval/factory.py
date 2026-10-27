@@ -65,6 +65,7 @@ BASE_TOOLS = ["read_file", "list_dir", "glob", "grep", "repo_map", "code_search"
               "edit_file", "multi_edit", "write_file", "apply_patch", "todo_read"]
 SHELL_TOOLS = ["run_shell", "shell_output", "shell_list", "shell_kill"]
 TEST_TOOLS = ["run_tests"]       # stands in for a shell when there is none
+SCRIPT_TOOLS = ["run_script"]    # the repo's generator scripts, allowlisted, only in the windows_job sandbox without network
 SHELL_ALLOW = ["python -m pytest*", "python -m ruff*", "python -m py_compile*", "python -c *", "pytest*", "dir*", "type *", "echo *"]
 
 
@@ -303,13 +304,13 @@ def small_model_overlay(mode: str) -> dict:
 
 def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_iterations: int = 60,
                    shell: str = "none", sandbox_paths: Optional[list[str]] = None, small_model: str = "on",
-                   extra_tools: Optional[list[str]] = None) -> dict:
+                   extra_tools: Optional[list[str]] = None, script_tool: bool = False) -> dict:
     """The `native_agent` overlay a bench run uses (the confined dev swarm's shape). `shell` is "none" (no shell tool at
     all) or "sandbox" (run_shell, inside the windows_job sandbox with no network; `sandbox_paths` readable). `extra_tools`
     (the conductor's read-only codeintel and vault-recall tools) are allowed too: offered but denied, they were dead weight."""
     from bot.agent_runtime import tools
 
-    extra = set(extra_tools or [])
+    extra = set(extra_tools or []) | (set(SCRIPT_TOOLS) if script_tool else set())
     allowed = set(BASE_TOOLS) | (set(SHELL_TOOLS) if shell == "sandbox" else set(TEST_TOOLS)) | extra
     names = sorted({s["name"] for s in tools.all_tool_schemas()})
     rules = [{"decision": "deny", "tool": n, "note": "not a bench tool"} for n in names if n not in allowed]
@@ -325,7 +326,7 @@ def agent_settings(*, model: str, context: int = 0, timeout_s: float = 900, max_
     if context:
         cfg["context_windows"] = {model: int(context)}
     cfg.update(small_model_overlay(small_model))
-    if shell == "sandbox":
+    if shell == "sandbox" or script_tool:          # run_script refuses anything but a confining sandbox without network
         cfg["sandbox"] = {"backend": "windows_job", "network": "none",
                           "network_none": {"extra_paths": list(sandbox_paths or [])},
                           "windows_job": {"memory_mb": 6144, "active_process_limit": 128}}
@@ -362,14 +363,15 @@ def endpoint_transport(base_url: str, api_key: str = ""):
 
 def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s: float, max_iterations: int, context: int = 0,
                 shell: str = "none", sandbox_paths: Optional[list[str]] = None, python: str = "", small_model: str = "on",
-                extra_tools: Optional[list[str]] = None) -> Any:
+                extra_tools: Optional[list[str]] = None, script_tool: bool = False) -> Any:
     """ABP's native agent, headless (abp_run), on `ws`, with the bench's tool and sandbox settings. Returns the abp_run
     RunResult. A hard wall-clock guard stops a model call that never returns. `extra_tools` (the conductor's codeintel and
     vault-recall tools) are offered on top of the bench set, small-model mode included; the bench itself passes none."""
     from abp_run import core
 
     settings = agent_settings(model=model, context=context, timeout_s=timeout_s, max_iterations=max_iterations, shell=shell,
-                              sandbox_paths=sandbox_paths, small_model=small_model, extra_tools=extra_tools)
+                              sandbox_paths=sandbox_paths, small_model=small_model, extra_tools=extra_tools,
+                              script_tool=script_tool)
     allowed = frozenset(BASE_TOOLS) | (frozenset(SHELL_TOOLS) if shell == "sandbox" else frozenset(TEST_TOOLS))
     if small_model == "on":
         # A turn that names its tools (allowed_tools) is sent exactly those: small-model mode's own tool filter does not
@@ -379,6 +381,8 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
         allowed = allowed & small.core_tools()
     if extra_tools:
         allowed = allowed | frozenset(extra_tools)
+    if script_tool:
+        allowed = allowed | frozenset(SCRIPT_TOOLS)
     root = Path(tempfile.mkdtemp(prefix="abp-bench-run-"))
     try:
         with core.ephemeral_environment(root, "deny"), agent_environment(settings, python=python):
@@ -408,7 +412,25 @@ def drive_agent(prompt: str, ws: Path, transport: Any, model: str, *, timeout_s:
         _discard(root)
 
 
-def knowledge_block(task: FactoryTask, ws: Path, knowledge: str = "off") -> str:
+def script_tool_supported() -> bool:
+    """run_script only runs inside the windows_job sandbox without network; elsewhere a task that needs it stays skipped."""
+    try:
+        from bot.agent_runtime import win_job
+
+        return bool(win_job.is_supported())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+KNOWLEDGE_SHARE = 0.03          # the knowledge may take at most this share of the model's context window
+
+
+def knowledge_budget(context: int = 0, cap_chars: int = 1200) -> int:
+    """Characters of knowledge a prompt may carry: `cap_chars`, and at most KNOWLEDGE_SHARE of the context (~4 chars/token)."""
+    return min(cap_chars, int((context or 32768) * KNOWLEDGE_SHARE * 4))
+
+
+def knowledge_block(task: FactoryTask, ws: Path, knowledge: str = "off", *, context: int = 0) -> str:
     """LF7: with `knowledge` "km", the project knowledge module (bot/conductor/projectkm.py, mmkm/1) built from the task's own
     base worktree (never from a later commit, so it cannot hold the answer) and sliced for the issue. Lessons from earlier
     Factory runs are left out: they come from this machine's history and could hold the real change."""
@@ -420,18 +442,77 @@ def knowledge_block(task: FactoryTask, ws: Path, knowledge: str = "off") -> str:
         info = projectkm.build(ws, "abp", Path(out), lessons=False)
         chunks = projectkm.load(Path(info["memory"]))
     return projectkm.format_block(projectkm.select(chunks, f"{task.title}\n{task.prompt}", re.findall(r"[\w./-]+\.py\b", task.prompt),
-                                                   budget_chars=1500))
+                                                   budget_chars=knowledge_budget(context), strict=True))
 
 
-def build_prompt(task: FactoryTask, *, shell: str = "none", knowledge: str = "") -> str:
+def build_prompt(task: FactoryTask, *, shell: str = "none", knowledge: str = "", script_tool: bool = False) -> str:
     how = ("You can run `python -m pytest -q -p no:cacheprovider <path>` and `python -m ruff check <file>` in a sandbox with no network."
            if shell == "sandbox" else
            "You cannot run commands here, but the run_tests tool runs pytest on test files (for example tests/test_x.py::test_y) "
            "and reports what failed: read the code, make the change carefully, then check it with run_tests.")
+    if script_tool:
+        how += " The run_script tool runs the repository's own generator scripts (for example scripts/export_openapi.py) in the sandbox."
+    # The knowledge goes BEFORE the issue, framed as reference: placed after it (and phrased as "follow these") it read as
+    # extra instructions, and the model wandered through the modules it named (LF7 bench, 2026-10-26/27).
     return (f"You are working in a checkout of a Python repository (your current folder). Resolve the issue below by changing "
             f"the code in this folder. {how} Keep the change small and focused: touch only what the issue needs, delete nothing, "
-            f"add or update a test when it is natural. Do not commit. Finish with a two-line summary of what you changed.\n\n"
-            f"## Issue: {task.title}\n\n{task.prompt.strip()}\n" + (f"\n{knowledge.strip()}\n" if knowledge else ""))
+            f"add or update a test when it is natural. Do not commit. Finish with a two-line summary of what you changed.\n\n" +
+            (f"{knowledge.strip()}\n\n" if knowledge else "") +
+            f"## Issue: {task.title}\n\n{task.prompt.strip()}\n")
+
+
+def visible_tests(ws: Path, changed: list[str]) -> list[str]:
+    """Test files the agent can see for its change: tests it wrote or edited, and the existing tests/test_<module>.py of each
+    module it changed. Never the judge's hidden tests (those are laid over the worktree only when judging)."""
+    out = [r for r in changed if r.endswith(".py") and (r.startswith("tests/") or Path(r).name.startswith("test_"))]
+    for r in changed:
+        if r.endswith(".py") and not r.startswith("tests/"):
+            cand = f"tests/test_{Path(r).stem}.py"
+            if (ws / cand).is_file():
+                out.append(cand)
+    return [r for r in dict.fromkeys(out) if (ws / r).is_file()][:5]
+
+
+def self_check(bench: "Bench", python: str, *, test_timeout: float = 300) -> str:
+    """After an agent turn: did the edits land, does every changed Python file parse and pass ruff, do the visible tests
+    pass? Returns the problems as feedback for another turn, or "" when there are none."""
+    ws = bench.path
+    changed = bench.changed()
+    if not changed:
+        return ("No file in the checkout changed: your edits did not apply, or you made none. Make the change with edit_file / "
+                "write_file and read the edited lines back to confirm them.")
+    problems: list[str] = []
+    pys = [r for r in changed if r.endswith(".py") and (ws / r).is_file()]
+    for r in pys:                          # parsed here, not with py_compile: that writes __pycache__ into the worktree
+        try:
+            compile((ws / r).read_text(encoding="utf-8", errors="replace"), r, "exec", dont_inherit=True)
+        except SyntaxError as exc:
+            problems.append(f"{r} does not parse: {exc.msg} at line {exc.lineno}")
+    if pys:
+        rc, out = _run([python, "-m", "ruff", "check", "--no-cache", "--output-format", "concise", *pys], ws, 120)
+        if rc != 0:
+            problems.append("ruff reports (fix these; the change is rejected while any remain):\n" + out.strip()[-1500:])
+    tests = visible_tests(ws, changed)
+    if tests and not problems:
+        rc, out = _run([python, "-m", "pytest", *tests, "-q", "-x", "-p", "no:cacheprovider", "--no-header", "-p", "no:xdist",
+                        "--tb=short"], ws, test_timeout)
+        if rc not in (0, 5):
+            problems.append(f"pytest {' '.join(tests)} fails:\n" + out.strip()[-2000:])
+    return "\n\n".join(problems)
+
+
+def fix_prompt(task: FactoryTask, base_prompt: str, feedback: str, changed: list[str]) -> str:
+    return (base_prompt + f"\n## Check of your change so far\n\nYou already changed: {', '.join(changed) or 'nothing'}. "
+            f"An automatic check of that change found these problems:\n\n{feedback}\n\nFix exactly these problems and keep the "
+            f"rest of your change. Read the lines you edit again before and after editing them.\n")
+
+
+def _merge_results(results: list) -> dict:
+    calls = [c for r in results for c in (r.tool_calls or [])]
+    last = results[-1]
+    return {"iterations": sum(r.iterations or 0 for r in results), "tokens": sum(r.tokens or 0 for r in results),
+            "denied": sum(r.denied or 0 for r in results), "run_id": last.run_id or None, "calls": calls,
+            "stopped": last.stopped or "", "error": last.error or None, "reply": last.reply or ""}
 
 
 # ------------------------------------------------------------------------------------------------------ run + report
@@ -439,8 +520,13 @@ def build_prompt(task: FactoryTask, *, shell: str = "none", knowledge: str = "")
 def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any], *, model: str, python: str,
              repo: Path = REPO, workdir: Optional[Path] = None, context: int = 0, shell: str = "none",
              sandbox_paths: Optional[list[str]] = None, timeout_s: Optional[float] = None, keep: bool = False,
-             lint: bool = True, test_timeout: float = 300, small_model: str = "on", knowledge: str = "off") -> dict:
-    """One task end to end: worktree, agent, judge, cleanup. Always returns a result row (a crash is a failed row)."""
+             lint: bool = True, test_timeout: float = 300, small_model: str = "on", knowledge: str = "off",
+             fix_rounds: int = 2, script_tool: bool = True) -> dict:
+    """One task end to end: worktree, agent, judge, cleanup. Always returns a result row (a crash is a failed row).
+
+    After the agent's turn a self-check (edits landed, changed files compile and pass ruff, the visible tests pass) runs; its
+    problems go back to the agent for up to `fix_rounds` more turns within the task's time limit. A task that needs a command
+    gets the run_script tool (generator scripts only, windows_job sandbox, no network) when `script_tool` is on."""
     limit = float(timeout_s or task.timeout_s)
     started = time.monotonic()
     row: dict[str, Any] = {"id": task.id, "title": task.title, "category": task.kind, "commit": task.commit, "passed": False,
@@ -448,29 +534,48 @@ def run_task(task: FactoryTask, transport_factory: Callable[[FactoryTask], Any],
                            "denied": 0, "run_id": None, "limited": False, "retry_at": None, "workspace": None,
                            "tool_errors": 0, "tool_error_counts": {}, "tool_calls": 0, "changed": [], "unrelated": [], "clean": False,
                            "failure_kind": "", "text_tool_call": False, "stopped": ""}
+    scripted = False
     if task.needs_shell and shell != "sandbox":
-        row.update(error="not run: this task needs a shell tool (regenerating a file) and the agent has none", limited=True,
-                   failure_kind="", duration_ms=0)
-        return row
+        scripted = script_tool and script_tool_supported()
+        if not scripted:
+            row.update(error="not run: this task needs a command (regenerating a file) and the agent has neither a shell nor "
+                             "the confined run_script tool", limited=True, failure_kind="", duration_ms=0)
+            return row
     bench: Optional[Bench] = None
     try:
         bench = Bench(repo, task, workdir)
         bench.__enter__()
-        kb = knowledge_block(task, bench.path, knowledge)
+        kb = knowledge_block(task, bench.path, knowledge, context=context)
         row["knowledge_chars"] = len(kb)
-        result = drive_agent(build_prompt(task, shell=shell, knowledge=kb), bench.path, transport_factory(task), model, timeout_s=limit,
-                             max_iterations=task.max_iterations, context=context, shell=shell, sandbox_paths=sandbox_paths,
-                             python=python, small_model=small_model)
+        prompt = build_prompt(task, shell=shell, knowledge=kb, script_tool=scripted)
+        results, feedback_log = [], []
+        current = prompt
+        while True:
+            left = limit - (time.monotonic() - started)
+            results.append(drive_agent(current, bench.path, transport_factory(task), model, timeout_s=limit if not results else left,
+                                       max_iterations=task.max_iterations, context=context, shell=shell, sandbox_paths=sandbox_paths,
+                                       python=python, small_model=small_model, script_tool=scripted))
+            if len(feedback_log) >= fix_rounds or limit - (time.monotonic() - started) < min(90.0, 0.15 * limit) or results[-1].error:
+                break
+            fb = self_check(bench, python, test_timeout=min(test_timeout, 180))
+            if not fb:
+                break
+            feedback_log.append(fb[:3000])
+            current = fix_prompt(task, prompt, fb, bench.changed())
+        merged = _merge_results(results)
+        row["fix_rounds"], row["self_check"] = len(feedback_log), [f.splitlines()[0][:200] for f in feedback_log]
         row["duration_ms"] = int((time.monotonic() - started) * 1000)
+        calls = merged["calls"]
         counts: dict[str, int] = {}
-        for call in result.tool_calls or []:
+        for call in calls:
             counts[call.get("tool")] = counts.get(call.get("tool"), 0) + 1
-        row.update(iterations=result.iterations, tokens=result.tokens, denied=result.denied, run_id=result.run_id or None,
-                   tool_counts=dict(sorted(counts.items())), tool_calls=len(result.tool_calls or []),
-                   tool_errors=sum(1 for c in result.tool_calls or [] if c.get("status") == "failed"),
-                   tool_error_counts=dict(sorted(Counter(c.get("tool") for c in result.tool_calls or [] if c.get("status") == "failed").items())),
-                   stopped=result.stopped or "", error=result.error or None,
-                   text_tool_call=bool(TEXT_TOOL_CALL.search(result.reply or "")))
+        row.update(iterations=merged["iterations"], tokens=merged["tokens"], denied=merged["denied"], run_id=merged["run_id"],
+                   tool_counts=dict(sorted(counts.items())), tool_calls=len(calls),
+                   tool_errors=sum(1 for c in calls if c.get("status") == "failed"),
+                   tool_error_counts=dict(sorted(Counter(c.get("tool") for c in calls if c.get("status") == "failed").items())),
+                   stopped=merged["stopped"], error=merged["error"],
+                   text_tool_call=bool(TEXT_TOOL_CALL.search(merged["reply"])))
+        result = results[-1]
         verdict = judge(bench, python, test_timeout=test_timeout, lint=lint)
         checks = verdict["checks"]
         row["checks"] = [{"name": c.name, "ok": c.ok, "detail": c.detail} for c in checks]
@@ -537,7 +642,8 @@ def run_all(tasks: list[FactoryTask], transport_factory: Callable[[FactoryTask],
     return {"schema": SCHEMA_VERSION, "mode": "factory", "model": model, "when": time.time(), **summary,
             "duration_ms": sum(r["duration_ms"] for r in rows),
             "notes": ["each task runs in a throwaway git worktree of the commit's parent", f"shell tool: {kw.get('shell', 'none')}",
-                      f"small-model mode: {kw.get('small_model', 'on')}", f"project knowledge (LF7): {kw.get('knowledge', 'off')}",
+                      f"small-model mode: {kw.get('small_model', 'on')}", f"project knowledge (LF7): {kw.get('knowledge', 'off')}", f"self-check fix rounds: {kw.get('fix_rounds', 2)}",
+                      f"run_script tool for command tasks: {'on' if kw.get('script_tool', True) else 'off'}",
                       f"context window told to the agent: {kw.get('context') or 'default'}"],
             "results": rows}
 
@@ -615,7 +721,8 @@ def main(args, python: str) -> int:
     transport = endpoint_transport(args.base_url, api_key)
     report = run_all(tasks, lambda _t: transport, model=args.model, python=python, repo=repo, workdir=workdir, context=args.context,
                      shell=args.shell, sandbox_paths=args.sandbox_path or [], timeout_s=args.timeout, keep=args.keep,
-                     small_model=args.small_model, knowledge=getattr(args, "knowledge", "off"))
+                     small_model=args.small_model, knowledge=getattr(args, "knowledge", "off"),
+                     fix_rounds=getattr(args, "fix_rounds", 2), script_tool=getattr(args, "script_tool", "on") == "on")
     report["model"] = args.label or args.model
     if args.out:
         from . import report as rep

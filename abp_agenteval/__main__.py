@@ -92,6 +92,12 @@ def main(argv=None) -> int:
                                 "leave it off), off, or auto")
             f.add_argument("--knowledge", choices=("off", "km"), default="off",
                            help="km: add the project knowledge module (mmkm/1, built from each task's base commit) to the prompt (LF7)")
+            f.add_argument("--fix-rounds", type=int, default=2,
+                           help="after the agent's turn, check the change (edits landed, compiles, ruff, visible tests) and give it "
+                                "back the problems for up to this many more turns (0 = off)")
+            f.add_argument("--script-tool", choices=("on", "off"), default="on",
+                           help="on: a task that needs a command gets run_script (the repo's generator scripts only, in the "
+                                "windows_job sandbox without network); off: such a task is skipped without --shell sandbox")
             f.add_argument("--out", help="write the JSON report here")
             f.add_argument("--keep", action="store_true", help="keep each worktree for inspection (you remove them)")
     cmp_ = sub.add_parser("compare", help="run the suite once per variant of prompt / tool wording and compare (see abp_agenteval/compare.py)")
