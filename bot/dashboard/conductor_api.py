@@ -19,6 +19,8 @@
     GET  /api/conductor/knowledge/recall?repo=&text=&files=&goal=   what a worker (text) and the planner (goal) would be given
     PUT  /api/conductor/knowledge/settings  {"enabled"?, "for_planner"?, "for_workers"?, "owner_rules"?, "to_memoryfabric"?}
                                             switch each part on or off (audited; the next run reads it)
+    GET  /api/conductor/buildcache          LF8: the build/test cache switches and this process's hits, misses and seconds saved
+    PUT  /api/conductor/buildcache/settings {"tests"?, "wheels"?, "venvs"?, "cargo"?}
     POST /api/conductor/knowledge/export    {"repo"?} rejected attempts as JSONL for later fine-tunes (agent state folder)
 
 Reading uses the dashboard's normal auth; planning, reviewing and deciding need the dashboard token.
@@ -201,6 +203,36 @@ def register(app: FastAPI, read_auth: Callable, write_auth: Callable) -> None:
         config.set_values(changes, actor="dashboard")
         db.log_audit(actor="dashboard", action="conductor_knowledge_set", detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))
         return _knowledge_doc()
+
+    # ------------------------------------------------------------- LF8 build and test caches
+    def _buildcache_doc() -> dict:
+        from bot.conductor import buildcache
+
+        return {"settings": buildcache.settings(), "switches": list(buildcache.SWITCHES), "stats": buildcache.stats()}
+
+    @app.get("/api/conductor/buildcache", dependencies=read)
+    async def conductor_buildcache():
+        import asyncio
+
+        return await asyncio.to_thread(_buildcache_doc)
+
+    @app.put("/api/conductor/buildcache/settings", dependencies=write)
+    def conductor_buildcache_settings(body: dict = Body(...)):
+        from bot import db
+        from bot.conductor import buildcache
+        from bot.config import config
+
+        changes: dict = {}
+        for k in buildcache.SWITCHES:
+            if k in body:
+                if not isinstance(body[k], bool):
+                    raise HTTPException(status_code=400, detail=f"{k} must be true or false")
+                changes[("conductor", "buildcache", k)] = body[k]
+        if not changes:
+            raise HTTPException(status_code=400, detail=f"send one or more of: {', '.join(buildcache.SWITCHES)}")
+        config.set_values(changes, actor="dashboard")
+        db.log_audit(actor="dashboard", action="conductor_buildcache_set", detail=", ".join(f"{k[-1]}={v}" for k, v in changes.items()))
+        return _buildcache_doc()
 
     @app.post("/api/conductor/knowledge/export", dependencies=write)
     def conductor_knowledge_export(body: dict = Body(default={})):

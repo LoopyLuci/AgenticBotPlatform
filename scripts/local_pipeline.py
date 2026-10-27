@@ -672,6 +672,46 @@ _FULL_SUITE_REQUIRED = ""          # non-empty (the reason) when this run deploy
 TEST_SELECT = os.environ.get("ABP_PIPELINE_TEST_SELECT", "1") != "0"
 QUICK_GATE = os.environ.get("ABP_PIPELINE_QUICK_GATE", "1") != "0"
 TESTSELECT_STATE = ROOT / "logs" / "local_pipeline" / "testselect_state.json"
+# LF8 (bot/conductor/buildcache.py): a selected, non-deploy run skips test files whose exact inputs already passed. A deploy
+# never looks anything up (the whole suite runs); every clean run records its passes for the next selected or Factory run.
+TEST_CACHE = os.environ.get("ABP_PIPELINE_TEST_CACHE", "1") != "0"
+_LAST_FLAKY: list[str] = []        # the tests _pytest_stage accepted as flaky on its last call (never recorded as passes)
+
+
+def _test_cache(py: str):
+    """(TestCache, keys()) or (None, None) when the cache is off or cannot be set up (then every file runs). keys() builds the
+    content keys (the import graph, the environment hash: a few seconds) on first use, so a run that never needs them never
+    waits for them."""
+    if not TEST_CACHE:
+        return None, None
+    try:
+        from bot.conductor import buildcache
+
+        tc = buildcache.TestCache.from_settings()
+    except Exception as exc:  # noqa: BLE001 - a cache problem never stops or shrinks a run
+        Step.warn(f"test cache unavailable ({type(exc).__name__}: {exc})")
+        return None, None
+    if not tc.enabled:
+        return None, None
+    made: list = []
+
+    def keys():
+        if not made:
+            made.append(buildcache.TestKeys(ROOT, py))
+        return made[0]
+    return tc, keys
+
+
+def _record_passes(tc, keys, files: list[str], seconds: float) -> None:
+    if tc is None or not files:
+        return
+    try:
+        k = keys()
+        kmap = {f: k.key(f) for f in files}
+        n = tc.record_passes(kmap, files, seconds, exclude=_LAST_FLAKY)
+        Step.doing(f"test cache: recorded {n} passing test file(s)")
+    except Exception as exc:  # noqa: BLE001
+        Step.warn(f"test cache: could not record passes ({type(exc).__name__})")
 
 
 def _test_plan():
@@ -717,13 +757,38 @@ def _check_tests_and_audit(py: str) -> bool:
                   "(pip install -r requirements-dev.txt)")
     if quick and not _pytest_stage(py, sel.tests, has_dev, coverage=False, label="quick gate (selected tests)"):
         return False
+    tc, keys = _test_cache(py)
     if full:
+        t0 = time.time()
         ok = _pytest_stage(py, [], has_dev, coverage=True, label="full suite")
         state.record(TESTSELECT_STATE, full=True, passed=ok)
         if not ok:
             return False
+        if tc is not None:
+            from bot.conductor import shards
+
+            _record_passes(tc, keys, [f for f, _ in shards.find_test_files(ROOT)], time.time() - t0)
     elif sel.tests:
-        ok = _pytest_stage(py, sel.tests, has_dev, coverage=False, label=f"{len(sel.tests)} selected test file(s)")
+        todo = list(sel.tests)
+        if tc is not None and not _FULL_SUITE_REQUIRED:          # lookups never happen on a run that deploys
+            try:
+                cached, todo, _ = tc.partition(keys(), sel.tests)
+            except Exception as exc:  # noqa: BLE001 - no keys: every selected file runs
+                Step.warn(f"test cache: no keys ({type(exc).__name__})")
+                cached, todo = [], list(sel.tests)
+            if cached:
+                Step.doing(f"test cache: {len(cached)} of {len(sel.tests)} selected file(s) already passed with the same inputs")
+                _RUN.decision(actor="rules", decision=f"skip {len(cached)} cached test file(s)", rule="test_cache",
+                              reason="their content keys (the file, its imports, the environment) already passed",
+                              inputs={"cached": len(cached), "run": len(todo)})
+        ok = True
+        if todo:
+            t0 = time.time()
+            ok = _pytest_stage(py, todo, has_dev, coverage=False, label=f"{len(todo)} selected test file(s)")
+            if ok:
+                _record_passes(tc, keys, todo, time.time() - t0)
+        else:
+            Step.ok("pytest: every selected test file already passed with the same inputs (test cache)")
         state.record(TESTSELECT_STATE, full=False, passed=ok)
         if not ok:
             return False
@@ -744,7 +809,7 @@ def _check_tests_and_audit(py: str) -> bool:
 def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool, label: str) -> bool:
     """One pytest run (the whole suite when `targets` is empty) with the self-healing flaky re-run.
 
-    pytest-xdist workers are capped (testselect.worker_count: half the CPUs, at most 8, ABP_PYTEST_MAX_WORKERS overrides) - the
+    pytest-xdist workers are capped (testselect.worker_count: half the CPUs, at most 4, ABP_PYTEST_MAX_WORKERS overrides) - the
     owner's CPU has had machine-check crashes under long all-core load, so `-n auto` is not used. The coverage floor applies only
     to the whole suite (a subset can never meet it)."""
     from bot.conductor import testselect
@@ -759,6 +824,7 @@ def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool,
         extra = ["-p", "no:xdist"]
     if coverage and has_dev:
         extra += ["--cov=bot", "--cov=abp_cicd", "--cov-report=term:skip-covered"]
+    _LAST_FLAKY.clear()
     Step.doing(f"pytest ({label}): " + (f"{workers} worker(s)" if workers else "serial"))
     ok, out = _run([py, "-m", "pytest", "-q", "-rfE", *extra, *targets], cwd=ROOT, timeout=PYTEST_TIMEOUT)
     _keep_pytest_output(out)
@@ -780,6 +846,7 @@ def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool,
             resolved_all, still_failing, telem = _recover_flaky(py, failed_ids)
             _write_flaky_telemetry(telem)
             flaky = [t for t in failed_ids if t not in still_failing]
+            _LAST_FLAKY.extend(failed_ids)
             if flaky:
                 _RUN.note("flaky tests (failed under load, passed on a settled serial re-run): "
                           + ", ".join(flaky), "warn")

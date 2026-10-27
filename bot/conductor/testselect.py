@@ -321,7 +321,7 @@ def schedule_settings() -> tuple[int, float]:
 
 # --------------------------------------------------------------- workers
 def worker_cap(cpus: Optional[int] = None) -> int:
-    """The most pytest-xdist workers any run gets: ABP_PYTEST_MAX_WORKERS, else half the logical CPUs, at most 8.
+    """The most pytest-xdist workers any run gets: ABP_PYTEST_MAX_WORKERS, else half the logical CPUs, at most 4.
 
     The owner's CPU has had machine-check crashes under long all-core load, so `-n auto` (every core) is never used."""
     env = os.environ.get("ABP_PYTEST_MAX_WORKERS", "").strip()
@@ -332,7 +332,7 @@ def worker_cap(cpus: Optional[int] = None) -> int:
             pass
     if cpus is None:
         cpus = os.cpu_count() or 2
-    return max(1, min(8, cpus // 2))
+    return max(1, min(4, cpus // 2))
 
 
 def worker_count(n_test_files: Optional[int], cpus: Optional[int] = None) -> int:

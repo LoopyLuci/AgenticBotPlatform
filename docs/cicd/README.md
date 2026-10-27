@@ -251,12 +251,52 @@ that selected it, and gives the reason for any full run. It journals a `test_sel
 meet it.
 
 **Workers.** `-n auto` (every core) is gone. The CPU has had machine-check crashes under long all-core load. The
-suite gets at most half the logical CPUs, capped at 8; `ABP_PYTEST_MAX_WORKERS` overrides this, and 0 means serial.
+suite gets at most half the logical CPUs, capped at 4 (the Factory's `conductor.max_workers` and default suite
+command too); `ABP_PYTEST_MAX_WORKERS` overrides this, and 0 means serial.
 A selection of 3 files or fewer runs serially, and a larger one gets about one worker per 3 files.
 
 Factory workers use the same selector. The conductor's integrator runs codeintel's `impact` tests together with
 `testselect`'s selection before its full suite, and `python -m bot.conductor.testselect [--run]` prints (or runs)
 the selection for the working tree against `origin/main`.
+
+### Build and test caches (Local Factory LF8)
+
+`bot/conductor/buildcache.py` lets the pipeline and Factory workers reuse results instead of redoing them. It is
+backed by CacheIt (the `cacheit` module's hub, through `bot/conductor/cache.py`). When the hub is not running,
+every lookup is a miss and the work simply runs.
+
+- **Test results, per test file.** A file's key hashes the file and every Python file it reaches through
+  `testselect`'s import graph, walked to the end with no depth limit. It also hashes an environment part: the
+  interpreter, its platform and every installed distribution with its version; every other file git sees in the
+  checkout (tracked or untracked, not ignored) that is not an indexed `.py` file, so `conftest.py`, the lock files,
+  `config/`, data, and Python outside the indexed roots all count; and the `ABP_*`, `PYTEST*` and `PYTHON*`
+  environment. A file whose exact key already passed is not run again. Only passes are stored. A failing run
+  stores nothing, and a file with a flaky test is never recorded. A command that deselects tests (`-k`, `-m`,
+  `--lf`, a `::` id) is never cached per file.
+- **Wheels.** `wheelhouse(lock)` builds wheels for a lock file once per (lock content, interpreter). It keeps
+  each wheel content-addressed in CacheIt, plus a manifest, so an empty folder refills without pip.
+- **Worker venvs** (off by default). A target repository without its own `.venv` gets one venv per (requirements,
+  interpreter), installed offline from the wheelhouse and shared by its workers' tests and proofs. Turning this on
+  installs that repository's requirements on the host.
+- **cargo/maturin.** `cargo_env(crate)` gives a `CARGO_TARGET_DIR` per exact crate content and `rustc -vV`.
+  Content, not mtimes: cargo's own freshness check uses mtimes, so a target folder shared between worktrees with
+  different sources could be reused wrongly. The 6 most recently used folders are kept.
+
+**A cache never hides a failure.**
+
+- Every deploy runs the whole suite with **no lookups at all**. Lookups happen only on a selected, non-deploy
+  pipeline run and in the conductor's integrator. A clean full run still records its passes, which is what makes
+  the next selected or Factory run fast.
+- The one blind spot is a test that depends on code the import graph cannot see, such as a module imported by a
+  computed name. The full suite before every deploy is the guarantee for that case.
+
+Tests: `tests/test_conductor_buildcache.py` covers key changes, failure and flaky handling, the deploy run doing no
+lookup, and a second Factory run that reuses passes while a real failure still fails. On ABP itself, a run of 5
+test files took 34 s cold and 5 s on the second run, all of it key computation.
+
+Switches: `conductor.buildcache.{tests,wheels,venvs,cargo}`, each with a toggle on the Agentic Workspace's
+"Factory caches" card (`GET /api/conductor/buildcache`, `PUT /api/conductor/buildcache/settings`, audited). The
+card also shows hits, runs and seconds saved. `ABP_PIPELINE_TEST_CACHE=0` turns the pipeline's lookups off.
 
 ### Pushing without GitHub dropping the connection (verified-commit stamp)
 

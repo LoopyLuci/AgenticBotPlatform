@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from bot.conductor import buildcache
 from bot.conductor import cache as cachelib
 from bot.conductor import shards as shardlib
 from bot.conductor import store
@@ -92,7 +93,8 @@ class Integrator:
                  workdir: Optional[Path] = None, suite_timeout_s: float = 3600, prefix: str = "integ/agents-",
                  regen_sdk: bool = True, shards: int = 1, workers: Any = None, max_workers: int = 8,
                  lock_wait_s: Optional[float] = None, lock_path: Optional[Path] = None, gate: Optional[Sequence[str]] = None,
-                 gate_timeout_s: float = 7200, selective_first: Optional[bool] = None, cache: Optional[cachelib.Cache] = None):
+                 gate_timeout_s: float = 7200, selective_first: Optional[bool] = None, cache: Optional[cachelib.Cache] = None,
+                 test_cache: Optional[buildcache.TestCache] = None):
         """`workers`: None leaves the suite's own `-n`, "auto" sizes it from free CPU/RAM (at most max_workers), a number sets it.
         `lock_wait_s`: None = no machine lock; a number = hold the machine-wide suite lock, waiting that long for it."""
         self.repo = Path(repo)
@@ -112,12 +114,16 @@ class Integrator:
         self.gate = list(gate) if gate else []
         self.gate_timeout = gate_timeout_s
         cfg = None
-        if selective_first is None or cache is None:
+        if selective_first is None or cache is None or test_cache is None:
             from bot import conductor
 
             cfg = conductor.settings()
         self.selective_first = bool(cfg["integrator"]["selective_first"]) if selective_first is None else bool(selective_first)
         self.cache = cache if cache is not None else cachelib.from_settings(cfg)
+        # LF8: per-test-file passes keyed by content, so a run re-runs only the files whose inputs changed. The integrator is not a
+        # deploy: the pipeline before every deploy runs the whole suite with no lookups.
+        self.test_cache = test_cache if test_cache is not None else buildcache.TestCache.from_settings(cfg)
+        self._groups: dict[str, list[str]] = {}
 
     # ----------------------------------------------------------- branches
     def next_branch(self) -> str:
@@ -231,10 +237,22 @@ class Integrator:
                       else shardlib.Budget(max(1, int(self.workers)), 0, 0.0, 0.0, "configured"))
             rec.budget = budget.to_dict()
             suite = shardlib.with_workers(suite, budget.workers)
-        groups = shardlib.split_files(shardlib.find_test_files(wt), self.shards) if self.shards > 1 else []
+        found = shardlib.find_test_files(wt)
+        groups = shardlib.split_files(found, self.shards) if self.shards > 1 else []
         if len(groups) > 1:
+            self._groups = {f"shard {i}/{len(groups)}": g for i, g in enumerate(groups, 1)} if buildcache.whole_files(suite) else {}
             return [(f"shard {i}/{len(groups)}", cmd, len(g)) for i, (g, cmd) in enumerate(zip(groups, shardlib.shard_commands(suite, groups)), 1)]
+        # per-file caching only when the command runs exactly the files we can name: the `tests` folder, nothing deselected
+        self._groups = {"all": [f for f, _ in found]} if "tests" in suite and buildcache.whole_files(suite) else {}
         return [("all", suite, 0)]
+
+    def _keys(self, wt: Path) -> Optional[buildcache.TestKeys]:
+        if not self.test_cache.enabled or not buildcache.whole_files(self.rerun):
+            return None
+        try:
+            return buildcache.TestKeys(wt, self.rerun[0] if self.rerun else sys.executable)
+        except Exception:  # noqa: BLE001 - no keys: every file runs
+            return None
 
     @staticmethod
     def _summary(out: str) -> str:
@@ -284,37 +302,54 @@ class Integrator:
         cmd = [*self.rerun, *tests]
         t0 = time.time()
         hit = self.cache.lookup(tree, cmd, tests)
+        file_hits: list[str] = []
         if hit:
             rc, out = 0, ""
             rec.cache["hits"] += 1
         else:
-            rc, out = self._run(cmd, wt)
+            keys = self._keys(wt)
+            file_hits, todo, kmap = self.test_cache.partition(keys, tests) if keys else ([], tests, {})
+            rec.cache["file_hits"] += len(file_hits)
+            rc, out = self._run([*self.rerun, *todo], wt) if todo else (0, f"[cached pass] {len(file_hits)} file(s)")
+            if rc == 0 and todo:
+                rec.cache["file_stores"] += self.test_cache.record_passes(kmap, todo, time.time() - t0)
             if rc == 0 and self.cache.store(tree, cmd, tests, {"rc": 0}):
                 rec.cache["stores"] += 1
         rec.selective.update(rc=rc, failed=failed_tests(out), seconds=round(time.time() - t0, 1), cached=bool(hit),
-                             tests_run=self._summary(out), note=f"{len(tests)} related test file(s)")
+                             cached_files=len(file_hits), tests_run=self._summary(out), note=f"{len(tests)} related test file(s)")
 
     def _test_locked(self, rec: Integration, wt: Path) -> None:
         log = wt.parent / f"{wt.name}.suite.log"
         plan = self._commands(rec, wt)
         outs, worst, crashed, failing = [], 0, [], []
         tree = cachelib.tree_hash(wt) if self.cache.enabled else ""
-        rec.cache = {"hits": 0, "stores": 0}
+        rec.cache = {"hits": 0, "stores": 0, "file_hits": 0, "file_stores": 0}
+        keys = None
         if self.selective_first:
             self._selective(rec, wt, tree)
         for name, cmd, nfiles in plan:
             t0 = time.time()
             hit = self.cache.lookup(tree, cmd)
+            file_hits: list[str] = []
             if hit:
                 rc, out = 0, str(hit.get("summary") or "[cached pass]")
                 rec.cache["hits"] += 1
             else:
-                rc, out = self._run(cmd, wt)
+                files = self._groups.get(name, [])
+                keys = keys or (self._keys(wt) if files else None)
+                file_hits, todo, kmap = self.test_cache.partition(keys, files) if keys else ([], files, {})
+                rec.cache["file_hits"] += len(file_hits)
+                if file_hits and not todo:
+                    rc, out = 0, f"[cached pass] all {len(file_hits)} test file(s) passed before with the same inputs"
+                else:
+                    rc, out = self._run(buildcache.narrow(cmd, files, todo) if file_hits else cmd, wt)
+                    if rc == 0:
+                        rec.cache["file_stores"] += self.test_cache.record_passes(kmap, todo, time.time() - t0)
                 if rc == 0 and self.cache.store(tree, cmd, (), {"rc": 0, "summary": f"[cached pass] {self._summary(out)}"}):
                     rec.cache["stores"] += 1
             named = failed_tests(out)
             rec.shards.append({"name": name, "files": nfiles, "rc": rc, "tests_run": self._summary(out), "failed": named,
-                               "seconds": round(time.time() - t0, 1), "cached": bool(hit)})
+                               "seconds": round(time.time() - t0, 1), "cached": bool(hit), "cached_files": len(file_hits)})
             outs.append(out if len(plan) == 1 else f"===== {name} (exit {rc}) =====\n{out}")
             worst = worst or rc
             if rc != 0 and not named:

@@ -7,6 +7,7 @@ not running, or any call fails, every lookup is a miss and every store does noth
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import subprocess
@@ -100,6 +101,36 @@ class Cache:
         r = self._call("cache.put", {"namespace": NAMESPACE, "key": make_key(tree, command, tests), "value": json.dumps(result),
                                      "ttl_s": TTL_S})
         return r is not None
+
+    # Plain values in any namespace (bot/conductor/buildcache.py): None / False whenever CacheIt is off, down or says no.
+    def get_json(self, namespace: str, key: str) -> Optional[dict]:
+        r = self._call("cache.get", {"namespace": namespace, "key": key, "encoding": "utf8"})
+        if not isinstance(r, dict) or not r.get("found"):
+            return None
+        try:
+            val = json.loads(r.get("value") or "")
+        except ValueError:
+            return None
+        return val if isinstance(val, dict) else None
+
+    def put_json(self, namespace: str, key: str, value: dict, ttl_s: int = TTL_S) -> bool:
+        return self._call("cache.put", {"namespace": namespace, "key": key, "value": json.dumps(value), "ttl_s": ttl_s}) is not None
+
+    def get_bytes(self, namespace: str, key: str) -> Optional[bytes]:
+        if not key:
+            return None
+        r = self._call("cache.get", {"namespace": namespace, "key": key, "encoding": "base64"})
+        if not isinstance(r, dict) or not r.get("found"):
+            return None
+        try:
+            return base64.b64decode(r.get("value_b64") or "")
+        except ValueError:
+            return None
+
+    def put_cas(self, namespace: str, data: bytes, ttl_s: int = TTL_S) -> str:
+        """Store bytes under their own hash; the key CacheIt returns, or '' on any failure."""
+        r = self._call("cache.put_cas", {"namespace": namespace, "value_b64": base64.b64encode(data).decode(), "ttl_s": ttl_s})
+        return str(r.get("key") or "") if isinstance(r, dict) else ""
 
 
 def from_settings(cfg: Optional[dict] = None) -> Cache:
