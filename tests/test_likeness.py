@@ -39,7 +39,8 @@ def _consent(tmp_path, **over):
 
 def _wait(job_id):
     import time
-    for _ in range(200):
+    deadline = time.monotonic() + 60.0            # a cold first job (model and OpenCV load) under a loaded machine
+    while time.monotonic() < deadline:
         j = jobs.job(job_id)
         if j["status"] not in ("queued", "running"):
             return j

@@ -570,10 +570,15 @@ def test_an_overrunning_stage_is_left_behind(monkeypatch, capsys, lp):
     monkeypatch.setattr(lp, "_DIFF_RANGE", "aaa..bbb")
     monkeypatch.setattr(lp, "DIFFLINT_JOIN_SLACK_S", 0.1)
     monkeypatch.setattr(difflint, "budget_s", lambda: 0.1)
-    monkeypatch.setattr(difflint, "run", lambda *a, **k: time.sleep(3) or Report())
+    import threading
+    release = threading.Event()           # held until the stage gave up, however long the other steps took
+    monkeypatch.setattr(difflint, "run", lambda *a, **k: release.wait(60) and Report())
     _scripted(monkeypatch, lp, GREEN)
-    assert lp.check_python() is True
-    assert "overran" in capsys.readouterr().out
+    try:
+        assert lp.check_python() is True
+        assert "overran" in capsys.readouterr().out
+    finally:
+        release.set()
 
 
 def test_the_stage_can_be_switched_off(monkeypatch, capsys, lp):
