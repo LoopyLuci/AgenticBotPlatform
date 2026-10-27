@@ -233,6 +233,29 @@ def _matches(changed: set[str], prefixes: tuple[str, ...]) -> bool:
     return any(f.startswith(prefixes) for f in changed)
 
 
+def _undeployed_files(install_dir: Optional[Path] = None) -> set[str]:
+    """Files that differ between the commit the installed bundle was built from (its .abp_build.json) and HEAD.
+    A push range only says what is new to GitHub; when live runs an older commit than what was pushed (a deploy that
+    built the wrong checkout), the difference must still deploy. Empty when unknown, current, or not an ancestor."""
+    try:
+        stamp = (install_dir or deploy_local.default_install_dir(ROOT)) / deploy_local.BUILD_STAMP
+        built = str(json.loads(stamp.read_text(encoding="utf-8")).get("commit") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return set()
+    if not built:
+        return set()
+    ok, head = _run(["git", "rev-parse", "HEAD"], cwd=ROOT)
+    if not ok or head.strip() == built:
+        return set()
+    ok, _ = _run(["git", "merge-base", "--is-ancestor", built, "HEAD"], cwd=ROOT)
+    if not ok:
+        return set()
+    ok, out = _run(["git", "diff", "--name-only", f"{built}..HEAD"], cwd=ROOT)
+    if not ok:
+        return set()
+    return {line.strip().replace(os.sep, "/") for line in out.splitlines() if line.strip()}
+
+
 def changed_files() -> Optional[set[str]]:
     """Files touched by this push, relative to ROOT with forward slashes,
     or None if that can't be determined — an unknown scope always means
@@ -1272,6 +1295,10 @@ def _run_pipeline_body(args: argparse.Namespace) -> int:
 
         Step.head("Change detection")
         changed = changed_files()
+        behind = _undeployed_files()
+        if changed is not None and behind:
+            Step.doing(f"the running bundle is behind HEAD — {len(behind)} file(s) it has not got yet count as changed")
+            changed |= behind
         if changed is None:
             Step.warn("couldn't determine which files changed — running the full pipeline")
             rust_needed = docker_needed = android_needed = vscode_needed = deploy_needed = native_needed = True

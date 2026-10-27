@@ -138,3 +138,51 @@ def test_only_this_checkouts_mcp_servers_are_stopped(monkeypatch, tmp_path):
         _FakeProc(24, "python.exe", None, ["python", "-m", "bot.mcp_server"]),
     ])
     assert local_pipeline.find_mcp_server_pids() == [21]
+
+
+def _git_repo(tmp_path):
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.strip()
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.invalid")
+    git("config", "user.name", "t")
+    (tmp_path / "bot").mkdir()
+    (tmp_path / "bot" / "a.py").write_text("a = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "one")
+    first = git("rev-parse", "HEAD")
+    (tmp_path / "bot" / "b.py").write_text("b = 2\n")
+    git("add", "-A")
+    git("commit", "-qm", "two")
+    return first, git("rev-parse", "HEAD")
+
+
+def test_a_bundle_older_than_head_counts_its_missing_files_as_changed(monkeypatch, tmp_path):
+    import json
+
+    repo, install = tmp_path / "repo", tmp_path / "install"
+    repo.mkdir()
+    install.mkdir()
+    first, head = _git_repo(repo)
+    monkeypatch.setattr(local_pipeline, "ROOT", repo)
+    stamp = install / local_pipeline.deploy_local.BUILD_STAMP
+    stamp.write_text(json.dumps({"commit": first}))
+    assert local_pipeline._undeployed_files(install) == {"bot/b.py"}
+    stamp.write_text(json.dumps({"commit": head}))
+    assert local_pipeline._undeployed_files(install) == set()
+
+
+def test_an_unknown_or_foreign_bundle_adds_nothing(monkeypatch, tmp_path):
+    import json
+
+    repo, install = tmp_path / "repo", tmp_path / "install"
+    repo.mkdir()
+    install.mkdir()
+    _git_repo(repo)
+    monkeypatch.setattr(local_pipeline, "ROOT", repo)
+    assert local_pipeline._undeployed_files(install) == set()
+    (install / local_pipeline.deploy_local.BUILD_STAMP).write_text(json.dumps({"commit": "0" * 40}))
+    assert local_pipeline._undeployed_files(install) == set()
