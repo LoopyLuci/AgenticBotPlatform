@@ -143,6 +143,15 @@ def _no_live_cacheit(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _agent_trash_in_tmp(monkeypatch, tmp_path):
+    """An agent's apply_patch removals move files to the trash (bot/agent_runtime/trash.py). No test may leave
+    files in the real data folder's trash, so every test gets its own."""
+    from bot.agent_runtime import trash
+
+    monkeypatch.setattr(trash, "trash_root", lambda: tmp_path / "agent-trash")
+
+
+@pytest.fixture(autouse=True)
 def _isolated_cicd_event_store(monkeypatch, tmp_path):
     """Instrumented scripts (release, pipeline) record into the CI/CD event
     store. No test may ever write into the real one, so every test gets its own."""
