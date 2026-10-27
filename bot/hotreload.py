@@ -469,6 +469,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
     "bot.agent_runtime.trash",  # stateless file moves for the agent's removals; coding_tools (denylisted) reaches it as a module attribute
+    "bot.modules.owner_drive",  # stateless request builder: calls harness.call for one DriveTier operation, registers its tool when tools.py asks
     "bot.agent_runtime.tool_loop",
     "bot.agent_runtime.output_schema",
     "bot.agent_runtime.subagents",
