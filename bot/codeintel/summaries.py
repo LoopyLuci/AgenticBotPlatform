@@ -126,17 +126,33 @@ def modelmistress_summarizer(model: str, timeout: float = 300.0) -> Summarizer:
     return run
 
 
-def relay_summarizer(model: str, base_url: str, token: str, timeout: float = 300.0) -> Summarizer:
-    """The same call through a running ABP's ModelMistress relay (`/api/modelmistress/v1/chat/completions`). For a
-    process that cannot reach the hub itself (another checkout, or one whose view of the hub's files is redirected)."""
+def openai_summarizer(model: str, url: str, headers: Optional[dict] = None, timeout: float = 300.0) -> Summarizer:
+    """The same call to any OpenAI-compatible chat endpoint (`url` is the full .../chat/completions address)."""
     import httpx
 
     def run(path: str, text: str) -> str:
-        r = httpx.post(base_url.rstrip("/") + "/api/modelmistress/v1/chat/completions", timeout=timeout,
-                       headers={"X-Dashboard-Token": token},
+        r = httpx.post(url, timeout=timeout, headers=headers or {},
                        json={"model": model, "messages": _messages(path, text), "stream": False, "temperature": 0.2,
                              "max_tokens": 220})
         r.raise_for_status()
         return _content(r.json())
 
     return run
+
+
+def relay_summarizer(model: str, base_url: str, token: str, timeout: float = 300.0) -> Summarizer:
+    """Through a running ABP's ModelMistress relay (`/api/modelmistress/v1/chat/completions`). For a process that
+    cannot reach the hub itself (another checkout, or one whose view of the hub's files is redirected)."""
+    return openai_summarizer(model, base_url.rstrip("/") + "/api/modelmistress/v1/chat/completions",
+                             {"X-Dashboard-Token": token}, timeout)
+
+
+def server_summarizer(model: str, base_url: str, timeout: float = 300.0) -> Summarizer:
+    """Straight to a model server's own OpenAI port (for example the llama-server a hub started), when neither the
+    hub nor ABP can be reached. Loopback only: file text must not leave this machine."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(base_url).hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise ValueError(f"{base_url} is not a loopback address; summaries only go to a model on this machine")
+    return openai_summarizer(model, base_url.rstrip("/") + "/v1/chat/completions", None, timeout)

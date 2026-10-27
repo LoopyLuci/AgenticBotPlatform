@@ -299,3 +299,22 @@ def test_relay_summarizer_posts_to_the_abp_relay(monkeypatch):
     assert sent["url"] == "http://127.0.0.1:8787/api/modelmistress/v1/chat/completions"
     assert sent["headers"] == {"X-Dashboard-Token": "tok"} and "tools" not in sent["json"]
     assert sent["json"]["model"] == "qwen" and sent["json"]["messages"][1]["content"].startswith("PATH: x.md\n")
+
+
+def test_server_summarizer_is_loopback_only(monkeypatch):
+    import httpx
+
+    sent = {}
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Direct."}}]}
+
+    monkeypatch.setattr(httpx, "post", lambda url, **kw: sent.update(url=url, **kw) or Resp())
+    assert summaries.server_summarizer("qwen", "http://127.0.0.1:59141/")("x.sash", "t") == "Direct."
+    assert sent["url"] == "http://127.0.0.1:59141/v1/chat/completions" and sent["headers"] == {}
+    with pytest.raises(ValueError):
+        summaries.server_summarizer("qwen", "http://203.0.113.5:8080")

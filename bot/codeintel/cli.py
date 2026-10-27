@@ -55,8 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("catalog"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--reason", default="")
     p = sub.add_parser("summarize"); p.add_argument("folder", nargs="?", default=""); p.add_argument("--model", required=True)
     p.add_argument("--limit", type=int, default=50); p.add_argument("--budget-s", type=float, default=600.0)
-    p.add_argument("--via", choices=("hub", "abp"), default="hub",
-                   help="abp: through the running ABP's relay (token from ABP_DASHBOARD_TOKEN or this install's .env)")
+    p.add_argument("--via", choices=("hub", "abp", "server"), default="hub",
+                   help="abp: through the running ABP's relay (token from ABP_DASHBOARD_TOKEN or this install's .env); "
+                        "server: straight to a model server's OpenAI port on this machine (--url)")
+    p.add_argument("--url", default="", help="with --via server: the server's base address, e.g. http://127.0.0.1:59141")
     sub.add_parser("bench")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
@@ -92,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
 
                 base, token = default_connection()
                 summarizer = summaries.relay_summarizer(args.model, base, os.environ.get("ABP_DASHBOARD_TOKEN") or token)
+            elif args.via == "server":
+                summarizer = summaries.server_summarizer(args.model, args.url)
             else:
                 summarizer = summaries.modelmistress_summarizer(args.model)
             out = summaries.summarize(root, summarizer, model=args.model,
