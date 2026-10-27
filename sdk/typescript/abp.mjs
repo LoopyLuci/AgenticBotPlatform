@@ -2043,6 +2043,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/fileserver/recovery": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/recovery",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/fileserver/remotes": {
   "body": false,
   "method": "GET",
@@ -5920,6 +5927,20 @@ export const operations = {
   "body": true,
   "method": "POST",
   "path": "/api/fileserver/mover",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/recovery/trash/purge": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/purge",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/recovery/trash/restore": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/restore",
   "path_params": [],
   "query_params": []
  },
@@ -13336,6 +13357,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "fs_recovery_api_fileserver_recovery_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/recovery",
+  "path_params": [],
+  "query_params": []
+ },
  "fs_remote_rm_api_fileserver_remotes__name__delete": {
   "body": false,
   "method": "DELETE",
@@ -13537,6 +13565,20 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/fileserver/transfers",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_trash_purge_api_fileserver_recovery_trash_purge_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/purge",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_trash_restore_api_fileserver_recovery_trash_restore_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/restore",
   "path_params": [],
   "query_params": []
  },

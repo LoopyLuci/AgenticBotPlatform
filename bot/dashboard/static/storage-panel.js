@@ -7,7 +7,8 @@
 //   Search     the content index: search by words / meaning, duplicates, index now
 //   Jobs       remotes, transfer jobs (copy / mirror / two-way), backups (encrypted, deduplicated) with restore
 //   Apps       one-click containers on the shares (Jellyfin, Nextcloud, Immich, Syncthing...)
-// Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_fileserver_page.py
+//   Recovery   files agents removed (restore, or purge after retention); the state backup's last run and last drill
+// Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_fileserver.py
 // fails if the two differ. It uses the page's own api(), esc() and showToast(), and draws into #stp-root.
 (function (api) {
   'use strict';
@@ -188,6 +189,27 @@ ${inv.smartctl ? '' : '<p class="stp-muted">Install smartmontools (smartctl) for
 <datalist id="stp-sharelist">${shareNames.map((n) => `<option value="share:${E(n)}">`).join('')}</datalist>`;
   }
 
+  async function recoveryTab() {
+    const r = await api(`${A}/recovery`);
+    const sb = r.state_backup || {};
+    const run = sb.last_run, drill = sb.last_drill;
+    const isoWhen = (s) => (s ? new Date(s).toLocaleString() : 'never');
+    const trashRow = (t) => `<tr><td class="stp-mono">${E(t.original)}</td><td>${E(t.session || '')}<div class="stp-muted">${E(t.reason || '')}</div></td><td>${human(t.size)}</td><td>${when(t.trashed_at)}</td>
+<td>${t.present ? (t.days_left > 0 ? `${E(t.days_left)} days left` : chip('warn', 'ready to purge')) : chip('bad', 'copy missing')}</td>
+<td><button class="btn ghost" data-trestore="${E(t.id)}"${t.present ? '' : ' disabled'}>Restore</button> <button class="btn ghost" data-tpurge="${E(t.id)}"${t.present && t.days_left <= 0 ? '' : ' disabled'}>Purge</button></td></tr>`;
+    const runCard = run ? `<div>Last backup ${isoWhen(run.at)}: ${E(run.files)} files, ${human(run.bytes)}, snapshot <span class="stp-mono">${E(run.snapshot)}</span></div>
+<div class="stp-muted">Left out on purpose: ${E((run.excluded || []).map((x) => x.label).join(', ') || 'nothing')}</div>
+${(run.unlisted || []).length ? `<div>${chip('warn', `${run.unlisted.length} database(s) in no store`)} <span class="stp-muted stp-mono">${E(run.unlisted.map((x) => x.path).join(', '))}</span></div>` : ''}` : '<div class="stp-muted">No state backup has run yet.</div>';
+    const drillBad = drill ? drill.bad_files.length + drill.bad_databases.length : 0;
+    const drillCard = drill ? `<div>Last check ${isoWhen(drill.at)}: ${chip(drill.ok && !drillBad ? 'ok' : 'bad', drill.ok && !drillBad ? 'verified' : 'failed')} ${E(drill.files)} files, ${E(drill.databases)} databases${drillBad ? `<div class="stp-muted stp-mono">${E([...drill.bad_files, ...drill.bad_databases].join(', '))}</div>` : ''}</div>` : '<div class="stp-muted">No restore check has run yet.</div>';
+    return `<p class="stp-muted">Files agents remove are moved here, not deleted. Restore puts one back where it was and never overwrites a file that exists again. Purge is permanent and waits for the retention period.</p>
+<div class="stp-grid"><div class="stp-card" style="grid-column:1/-1"><b>Removed by agents</b>
+<table class="stp-table">${r.trash.map(trashRow).join('') || '<tr><td class="stp-muted">Nothing in the trash.</td></tr>'}</table>
+<div class="stp-muted">Kept ${E(r.retention_days)} days.</div></div>
+<div class="stp-card"><b>State backup</b>${runCard}<div class="stp-muted">Runs from the terminal: <span class="stp-mono">python -m bot.state_backup run --repo &lt;folder&gt;</span>, with the password in ABP_STATE_BACKUP_PASSWORD. This page shows the results.</div></div>
+<div class="stp-card"><b>Restore check</b>${drillCard}<div class="stp-muted">The check restores the newest backup into a scratch folder and verifies every file, database and row count.</div></div></div>`;
+  }
+
   // ---- wiring ----
   function wire() {
     const root = $('stp-root');
@@ -258,6 +280,9 @@ ${inv.smartctl ? '' : '<p class="stp-muted">Install smartmontools (smartctl) for
         runInto(send(`${A}/backups/${encodeURIComponent(b.dataset.bsnap)}/restore`, 'POST', { snapshot: pick, target }), 'stp-b-log');
       } catch (e) { toast(errText(e), 'error'); }
     });
+    // recovery
+    each('[data-trestore]', (b) => act(() => send(`${A}/recovery/trash/restore`, 'POST', { id: b.dataset.trestore }), 'Restored'));
+    each('[data-tpurge]', (b) => { if (confirm('Purge this file for good? It cannot be recovered after this.')) act(() => send(`${A}/recovery/trash/purge`, 'POST', { id: b.dataset.tpurge }), 'Purged'); });
     // apps
     each('[data-app]', (b) => {
       const id = b.dataset.app; const mounts = {};
@@ -273,13 +298,13 @@ ${inv.smartctl ? '' : '<p class="stp-muted">Install smartmontools (smartctl) for
     const root = $('stp-root');
     if (!root || st.busy) return;
     st.busy = true;
-    const tabs = [['overview', 'Overview'], ['array', 'Array & parity'], ['shares', 'Shares'], ['users', 'Users & links'], ['disks', 'Disks'], ['search', 'Search'], ['jobs', 'Transfers & backups'], ['apps', 'Apps']];
+    const tabs = [['overview', 'Overview'], ['array', 'Array & parity'], ['shares', 'Shares'], ['users', 'Users & links'], ['disks', 'Disks'], ['search', 'Search'], ['jobs', 'Transfers & backups'], ['apps', 'Apps'], ['recovery', 'Recovery']];
     const head = `<div class="stp-tabs">${tabs.map(([k, l]) => `<button class="btn ghost ${st.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
     try {
       if (!st.o) st.o = await api(A);
       const t = st.tab;
       const html = t === 'array' ? arrayTab() : t === 'shares' ? await sharesTab() : t === 'users' ? await usersTab() : t === 'disks' ? await disksTab()
-        : t === 'search' ? await searchTab() : t === 'jobs' ? await jobsTab() : t === 'apps' ? await appsTab() : await overviewTab();
+        : t === 'search' ? await searchTab() : t === 'jobs' ? await jobsTab() : t === 'apps' ? await appsTab() : t === 'recovery' ? await recoveryTab() : await overviewTab();
       root.innerHTML = head + html;
     } catch (e) { root.innerHTML = head + `<p class="cardnote">${E(errText(e))}</p>`; }
     st.busy = false;

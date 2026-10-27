@@ -23,6 +23,8 @@
     GET    /api/fileserver/events                  GET /runs/{id}
     GET    /api/fileserver/tiering                 status;  GET /tiering/scan (dry run);  GET /tiering/index
                                                    POST /tiering/apply | /tiering/recall {path}  (dashboard token only)
+    GET    /api/fileserver/recovery                trash (what agents removed), retention, the state backup's last run and drill
+                                                   POST /recovery/trash/restore | /trash/purge {id}  (dashboard token only)
 """
 from __future__ import annotations
 
@@ -309,6 +311,30 @@ def register(app: FastAPI, require_token: Callable) -> None:
     @app.post(f"{A}/tiering/recall", dependencies=[Depends(operator)])
     async def fs_tiering_recall(body: dict = Body(...)):
         return await _tier(storage_tiering.recall, str(body.get("path") or ""))
+
+    # Recovery (the Storage page's Recovery tab): what agents removed (bot/agent_runtime/trash.py) and the state
+    # backup's last run and drill (bot/state_backup.py). Restore and purge are owner actions: the dashboard token only.
+    from bot import state_backup
+    from bot.agent_runtime import trash
+
+    async def _trash(fn, item_id: str):
+        try:
+            return await asyncio.to_thread(fn, item_id)
+        except trash.TrashError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.get(f"{A}/recovery", dependencies=dep)
+    async def fs_recovery():
+        return {"trash": await asyncio.to_thread(trash.items), "retention_days": trash.RETENTION_DAYS,
+                "state_backup": await asyncio.to_thread(state_backup.current_status)}
+
+    @app.post(f"{A}/recovery/trash/restore", dependencies=[Depends(operator)])
+    async def fs_trash_restore(body: dict = Body(...)):
+        return await _trash(trash.restore, str(body.get("id") or ""))
+
+    @app.post(f"{A}/recovery/trash/purge", dependencies=[Depends(operator)])
+    async def fs_trash_purge(body: dict = Body(...)):
+        return await _trash(lambda item_id: trash.purge(item_id, owner=True), str(body.get("id") or ""))
 
     @app.get(f"{A}/events", dependencies=dep)
     async def fs_events(limit: int = Query(100)):

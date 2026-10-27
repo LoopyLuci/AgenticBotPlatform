@@ -301,6 +301,11 @@ def status(data: Path) -> dict:
         return {}
 
 
+def current_status() -> dict:
+    """The last run and the last drill, read from the default data folder (the Storage page's Recovery tab)."""
+    return status(_defaults()[0])
+
+
 def _defaults() -> tuple[Path, Path, Optional[Path], list[tuple[str, Path]]]:
     """The data folder, the project root, the private overlay folder and the context-vault directory tiers."""
     from bot import envfile

@@ -187,3 +187,47 @@ def test_apply_patch_refuses_to_remove_a_link_and_changes_nothing(ws, trash_home
         call(ws, "apply_patch", patch=patch)
     assert (ws / "other.txt").read_text() == "o\n" and link.is_symlink()
     assert trash.items(trash_home) == []
+
+
+def test_the_recovery_api_is_owner_only_and_refuses_early_purges(ws, trash_home, tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from bot import state_backup
+    from bot.dashboard import fileserver_api
+
+    data = tmp_path / "data"
+    monkeypatch.setattr(state_backup, "_defaults", lambda: (data, tmp_path, None, []))
+    state_backup._write_status(data, {"last_run": {"snapshot": "abc123", "files": 3, "bytes": 9, "excluded": [],
+                                                   "unlisted": [], "at": "2026-10-27T00:00:00Z"}})
+    monkeypatch.setenv("DASHBOARD_TOKEN", "owner-token")
+    src = put(ws, "a.txt", "x\n", read=False)
+    item = trash.trash_file(ws, src, session="s1", reason="test", root=trash_home)
+    app = FastAPI()
+    fileserver_api.register(app, lambda: None)
+    c = TestClient(app)
+    owner = {"X-Dashboard-Token": "owner-token"}
+
+    view = c.get("/api/fileserver/recovery").json()
+    assert [t["id"] for t in view["trash"]] == [item["id"]] and view["state_backup"]["last_run"]["snapshot"] == "abc123"
+    assert c.post("/api/fileserver/recovery/trash/restore", json={"id": item["id"]}).status_code == 403
+    assert c.post("/api/fileserver/recovery/trash/restore", json={"id": item["id"]}, headers={"X-Dashboard-Token": "x"}).status_code == 403
+    assert c.post("/api/fileserver/recovery/trash/purge", json={"id": item["id"]}, headers=owner).status_code == 400
+    assert c.post("/api/fileserver/recovery/trash/restore", json={"id": "../../etc/passwd"}, headers=owner).status_code == 400
+    assert c.post("/api/fileserver/recovery/trash/restore", json={"id": item["id"]}, headers=owner).status_code == 200
+    assert src.read_text() == "x\n" and trash.items(trash_home) == []
+
+
+def test_a_checkpoint_after_an_apply_patch_delete_brings_the_file_back(ws, trash_home, tmp_path, monkeypatch):
+    """The agent loop checkpoints after every dangerous call, so a removal is in the shadow store too: a rollback
+    to the checkpoint before the delete restores it. The trash is the per-file route; this is the whole-tree one."""
+    from bot.agent_runtime import checkpoints, tool_loop
+
+    monkeypatch.setattr("bot.envfile.PROJECT_ROOT", tmp_path / "shadow_root")
+    put(ws, "gone.txt", "bye\n")
+    checkpoints.create_checkpoint(ws, "before the delete")
+    call(ws, "apply_patch", patch="--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n")
+    tool_loop.try_checkpoint(ws, "apply_patch", {})
+    assert not (ws / "gone.txt").exists()
+    checkpoints.rollback(ws, steps=1)
+    assert (ws / "gone.txt").read_text() == "bye\n"

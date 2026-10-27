@@ -41,3 +41,27 @@ has a `manifest.json` with:
 
 The drill restores the newest state snapshot into a temporary folder and checks every `sha256`, every SQLite
 `integrity_check`, and every recorded row count. It never touches live files.
+
+## C5. What can be recovered after a removal
+
+Two mechanisms cover agent removals. They differ in scope.
+
+- **Trash (C3):** per file, restored with `trash_restore` or the GUI. Covers `apply_patch` deletes and renames.
+- **Checkpoints:** the agent loop commits the workspace after every dangerous call (`bot/agent_runtime/tool_loop.py`,
+  `try_checkpoint`). A rollback resets the whole working tree to an earlier checkpoint. It covers any removal made
+  by a dangerous call inside the workspace.
+
+| Removal | Per-file recovery | Whole-tree recovery | Gate |
+|---|---|---|---|
+| `apply_patch` delete or rename | Trash | Checkpoint rollback (tested) | Approval, unless a rule or mode allows the call |
+| `run_shell` `rm` inside the workspace | None | Checkpoint rollback (same path as `apply_patch`; not tested with a real shell) | Approval for each call, unless a rule or the unrestricted tier allows it |
+| `run_shell` `rm` outside the workspace | None | None | Approval only |
+
+Decisions:
+
+- Shell commands do not go through the trash. An arbitrary command cannot be intercepted reliably, and checkpoints
+  already cover in-workspace removals.
+- A removal outside the workspace is not recoverable by ABP. The approval gate is the protection there.
+- A checkpoint rollback also discards later edits to other files. When one file is needed, restore it from the trash.
+- Checkpoints exist only for the ABP tool loop (the API and custom-model backends). The Claude Code CLI and Hermes
+  backends run their own tools and get neither mechanism.

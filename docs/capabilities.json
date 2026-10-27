@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1112,
+  "route": 1115,
   "setting": 72
  },
  "entries": [
@@ -3917,6 +3917,16 @@
    "label": "Fs Pools",
    "network": false,
    "where": "GET /api/fileserver/pools"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:GET /api/fileserver/recovery",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Recovery",
+   "network": false,
+   "where": "GET /api/fileserver/recovery"
   },
   {
    "cloud": false,
@@ -8637,6 +8647,26 @@
    "label": "Fs Mover",
    "network": false,
    "where": "POST /api/fileserver/mover"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:POST /api/fileserver/recovery/trash/purge",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Trash Purge",
+   "network": false,
+   "where": "POST /api/fileserver/recovery/trash/purge"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:POST /api/fileserver/recovery/trash/restore",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Trash Restore",
+   "network": false,
+   "where": "POST /api/fileserver/recovery/trash/restore"
   },
   {
    "cloud": false,
