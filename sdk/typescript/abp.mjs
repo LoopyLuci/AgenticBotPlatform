@@ -4662,6 +4662,92 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/video": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/video/assets": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "offset"
+  ]
+ },
+ "GET /api/video/assets/{asset_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/video/assets/{asset_id}/file": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/file",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/video/assets/{asset_id}/provenance": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/provenance",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/video/assets/{asset_id}/thumbnail": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/thumbnail",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/video/jobs": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/jobs",
+  "path_params": [],
+  "query_params": [
+   "status",
+   "limit"
+  ]
+ },
+ "GET /api/video/jobs/{job_id}": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "GET /api/video/models": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "GET /api/video/workflows": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/workflows",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/vision": {
   "body": false,
   "method": "GET",
@@ -8437,6 +8523,49 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/video/assets/{asset_id}/derive": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/video/assets/{asset_id}/derive",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/video/jobs": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/video/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/video/jobs/{job_id}/cancel": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/jobs/{job_id}/cancel",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/video/models/{model_id}/download": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/models/{model_id}/download",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
+ "POST /api/video/models/{model_id}/verify": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/models/{model_id}/verify",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
  "POST /api/vision/analyze": {
   "body": true,
   "method": "POST",
@@ -8986,6 +9115,13 @@ export const operations = {
   "path_params": [
    "item_id"
   ],
+  "query_params": []
+ },
+ "PUT /api/video/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/video/settings",
+  "path_params": [],
   "query_params": []
  },
  "add_instance_api_runtime_instances_post": {
@@ -17722,6 +17858,142 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "video_asset_api_video_assets__asset_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "video_asset_derive_api_video_assets__asset_id__derive_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/video/assets/{asset_id}/derive",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "video_asset_file_api_video_assets__asset_id__file_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/file",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "video_asset_provenance_api_video_assets__asset_id__provenance_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/provenance",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "video_asset_thumbnail_api_video_assets__asset_id__thumbnail_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets/{asset_id}/thumbnail",
+  "path_params": [
+   "asset_id"
+  ],
+  "query_params": []
+ },
+ "video_assets_api_video_assets_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/assets",
+  "path_params": [],
+  "query_params": [
+   "limit",
+   "offset"
+  ]
+ },
+ "video_job_api_video_jobs__job_id__get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/jobs/{job_id}",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "video_job_cancel_api_video_jobs__job_id__cancel_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/jobs/{job_id}/cancel",
+  "path_params": [
+   "job_id"
+  ],
+  "query_params": []
+ },
+ "video_job_submit_api_video_jobs_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/video/jobs",
+  "path_params": [],
+  "query_params": []
+ },
+ "video_jobs_api_video_jobs_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/jobs",
+  "path_params": [],
+  "query_params": [
+   "status",
+   "limit"
+  ]
+ },
+ "video_model_download_api_video_models__model_id__download_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/models/{model_id}/download",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
+ "video_model_verify_api_video_models__model_id__verify_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/video/models/{model_id}/verify",
+  "path_params": [
+   "model_id"
+  ],
+  "query_params": []
+ },
+ "video_models_api_video_models_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/models",
+  "path_params": [],
+  "query_params": []
+ },
+ "video_settings_api_video_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/video/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "video_status_api_video_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video",
+  "path_params": [],
+  "query_params": []
+ },
+ "video_workflows_api_video_workflows_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/video/workflows",
+  "path_params": [],
   "query_params": []
  },
  "vision_analyze_api_vision_analyze_post": {

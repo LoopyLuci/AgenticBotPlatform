@@ -1601,6 +1601,51 @@ async def conductor_push(queue_id: str, by: str) -> Any:
     return await _request("POST", f"/api/conductor/queue/{queue_id}/push", json={"by": by}, timeout=300.0)
 
 
+# ---- Video Studio (bot/video) ---------------------------------------------------------
+@mcp.tool()
+async def video_status() -> Any:
+    """Video Studio: whether it is on, the job queue, render backends, workflow templates, models (verified or not) and ffmpeg."""
+    return await _request("GET", "/api/video")
+
+
+@mcp.tool()
+async def video_generate(prompt: str, workflow: str = "", seconds: Optional[float] = None, params: Optional[dict] = None,
+                         parent_id: str = "") -> Any:
+    """Queue a video clip rendered on this machine (one job at a time; it takes the GPU). `workflow` is a template id
+    from video_status ('' = the configured default, 'testsrc' = a test pattern without a model). Returns the job;
+    follow it with video_job. The finished clip lands in the library with its provenance."""
+    p = dict(params or {})
+    p["prompt"] = prompt
+    if seconds is not None:
+        p["seconds"] = seconds
+    body: dict = {"params": p}
+    if workflow:
+        body["workflow"] = workflow
+    if parent_id:
+        body["parent_id"] = parent_id
+    return await _request("POST", "/api/video/jobs", json=body)
+
+
+@mcp.tool()
+async def video_job(job_id: str) -> Any:
+    """One video job: status, progress, message and, when done, its clip (asset with url and provenance link)."""
+    return await _request("GET", f"/api/video/jobs/{job_id}")
+
+
+@mcp.tool()
+async def video_cancel(job_id: str) -> Any:
+    """Cancel a queued or running video job."""
+    return await _request("POST", f"/api/video/jobs/{job_id}/cancel")
+
+
+@mcp.tool()
+async def video_library(asset_id: str = "", limit: int = 20) -> Any:
+    """The video library: recent clips, or one clip (asset_id) with its lineage and children."""
+    if asset_id:
+        return await _request("GET", f"/api/video/assets/{asset_id}")
+    return await _request("GET", "/api/video/assets", params={"limit": limit})
+
+
 # ---- extensions (ABP_PRIVATE_DIR) ----------------------------------------------------
 # Tools an extension registered through ExtensionAPI.add_mcp_tool(), added to the same server
 # as every tool above. One broken extension costs its own tools and nothing else.

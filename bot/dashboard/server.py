@@ -920,6 +920,8 @@ def build_app() -> FastAPI:
 
     # Likeness (Video Studio V3): face swap, recast and characters under consent (/api/likeness; bot/likeness).
     _area_routes("likeness", "likeness_api", _require_token)
+    # Video Studio (V1 engine): job queue, library, workflows, models (/api/video; bot/video).
+    _area_routes("video", "video_api", _require_token)
 
     # Studio: generative code and GUI with a real-time preview (/studio/v/*, /api/studio/*; bot/studio).
     _area_routes("studio", "studio_api", _require_token)

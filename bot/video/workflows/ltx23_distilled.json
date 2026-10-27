@@ -1,0 +1,20 @@
+{"id": "ltx23-distilled", "version": 1, "backend": "sdcpp", "mode": "t2v", "title": "LTX-2.3 22B distilled (few steps; not measured yet)",
+ "description": "Built for few steps (8, cfg 1). Not yet rendered on this route: treat its speed as unknown until a run is recorded.",
+ "model": "ltx-2.3-22b-distilled-q4", "vram_gb": 18, "frames_rule": "8k+1",
+ "params": {
+  "prompt": {"type": "string", "required": true, "max_len": 2000},
+  "negative": {"type": "string", "default": "blurry, low quality, distorted, deformed, watermark, text, static, flicker, jpeg artifacts", "max_len": 2000},
+  "image": {"type": "path", "default": ""},
+  "seconds": {"type": "number", "default": 2, "min": 0.5, "max": 10},
+  "fps": {"type": "int", "default": 24, "min": 8, "max": 24},
+  "width": {"type": "int", "default": 832, "min": 256, "max": 1280, "multiple": 32},
+  "height": {"type": "int", "default": 480, "min": 256, "max": 720, "multiple": 32},
+  "steps": {"type": "int", "default": 8, "min": 1, "max": 30},
+  "cfg": {"type": "number", "default": 1.0, "min": 1.0, "max": 10.0},
+  "seed": {"type": "int", "default": -1, "min": -1, "max": 4294967295}
+ },
+ "args": ["-M", "vid_gen", "--diffusion-model", "{file:diffusion}", "--vae", "{file:vae}", "--audio-vae", "{file:audio_vae}",
+          "--llm", "{file:llm}", "--embeddings-connectors", "{file:connectors}", "-p", "{prompt}", "-n", "{negative}",
+          "--cfg-scale", "{cfg}", "--sampling-method", "euler", "--steps", "{steps}", "-W", "{width}", "-H", "{height}",
+          "--video-frames", "{frames}", "--fps", "{fps}", "--offload-to-cpu", "--seed", "{seed}", "-v", "-o", "{output}"],
+ "optional_args": {"image": ["-i", "{image}"]}}

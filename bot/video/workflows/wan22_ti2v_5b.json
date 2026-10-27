@@ -1,0 +1,22 @@
+{"id": "wan22-ti2v-5b", "version": 1, "backend": "sdcpp", "mode": "t2v", "title": "Wan 2.2 TI2V 5B (text or image to video)",
+ "description": "Proven on sd.cpp Vulkan (V0). 480p is the default; 1280x704 is the quality tier (about 244 s per step).",
+ "model": "wan2.2-ti2v-5b-q8", "vram_gb": 13, "frames_rule": "4k+1",
+ "params": {
+  "prompt": {"type": "string", "required": true, "max_len": 2000},
+  "negative": {"type": "string", "default": "blurry, low quality, distorted, deformed, watermark, text, static, flicker, jpeg artifacts", "max_len": 2000},
+  "image": {"type": "path", "default": ""},
+  "seconds": {"type": "number", "default": 2, "min": 0.5, "max": 10},
+  "fps": {"type": "int", "default": 24, "min": 8, "max": 24},
+  "width": {"type": "int", "default": 832, "min": 256, "max": 1280, "multiple": 32},
+  "height": {"type": "int", "default": 480, "min": 256, "max": 720, "multiple": 32},
+  "steps": {"type": "int", "default": 20, "min": 1, "max": 50},
+  "cfg": {"type": "number", "default": 5.0, "min": 1.0, "max": 15.0},
+  "flow_shift": {"type": "number", "default": 5.0, "min": 0.0, "max": 20.0},
+  "vae_tiling": {"type": "bool", "default": true},
+  "seed": {"type": "int", "default": -1, "min": -1, "max": 4294967295}
+ },
+ "args": ["-M", "vid_gen", "--diffusion-model", "{file:diffusion}", "--vae", "{file:vae}", "--t5xxl", "{file:t5xxl}",
+          "-p", "{prompt}", "-n", "{negative}", "--cfg-scale", "{cfg}", "--sampling-method", "euler", "--steps", "{steps}",
+          "-W", "{width}", "-H", "{height}", "--video-frames", "{frames}", "--fps", "{fps}", "--flow-shift", "{flow_shift}",
+          "--seed", "{seed}", "-v", "-o", "{output}"],
+ "optional_args": {"image": ["-i", "{image}"], "vae_tiling": ["--vae-tiling"]}}

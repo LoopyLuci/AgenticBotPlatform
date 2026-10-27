@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1095,
+  "route": 1111,
   "setting": 72
  },
  "entries": [
@@ -7080,6 +7080,106 @@
   },
   {
    "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Status",
+   "network": false,
+   "where": "GET /api/video"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/assets",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Assets",
+   "network": false,
+   "where": "GET /api/video/assets"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/assets/{asset_id}",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Asset",
+   "network": false,
+   "where": "GET /api/video/assets/{asset_id}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/assets/{asset_id}/file",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Asset File",
+   "network": false,
+   "where": "GET /api/video/assets/{asset_id}/file"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/assets/{asset_id}/provenance",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Asset Provenance",
+   "network": false,
+   "where": "GET /api/video/assets/{asset_id}/provenance"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/assets/{asset_id}/thumbnail",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Asset Thumbnail",
+   "network": false,
+   "where": "GET /api/video/assets/{asset_id}/thumbnail"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/jobs",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Jobs",
+   "network": false,
+   "where": "GET /api/video/jobs"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/jobs/{job_id}",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Job",
+   "network": false,
+   "where": "GET /api/video/jobs/{job_id}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/models",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Models",
+   "network": false,
+   "where": "GET /api/video/models"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:GET /api/video/workflows",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Workflows",
+   "network": false,
+   "where": "GET /api/video/workflows"
+  },
+  {
+   "cloud": false,
    "desc": "API (vision)",
    "id": "route:GET /api/vision",
    "keywords": "vision",
@@ -11880,6 +11980,56 @@
   },
   {
    "cloud": false,
+   "desc": "API (video)",
+   "id": "route:POST /api/video/assets/{asset_id}/derive",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Asset Derive",
+   "network": false,
+   "where": "POST /api/video/assets/{asset_id}/derive"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:POST /api/video/jobs",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Job Submit",
+   "network": false,
+   "where": "POST /api/video/jobs"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:POST /api/video/jobs/{job_id}/cancel",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Job Cancel",
+   "network": false,
+   "where": "POST /api/video/jobs/{job_id}/cancel"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:POST /api/video/models/{model_id}/download",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Model Download",
+   "network": false,
+   "where": "POST /api/video/models/{model_id}/download"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:POST /api/video/models/{model_id}/verify",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Model Verify",
+   "network": false,
+   "where": "POST /api/video/models/{model_id}/verify"
+  },
+  {
+   "cloud": false,
    "desc": "API (vision)",
    "id": "route:POST /api/vision/analyze",
    "keywords": "vision",
@@ -12577,6 +12727,16 @@
    "label": "Um Edit",
    "network": false,
    "where": "PUT /api/user-model/items/{item_id}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (video)",
+   "id": "route:PUT /api/video/settings",
+   "keywords": "video",
+   "kind": "route",
+   "label": "Video Settings",
+   "network": false,
+   "where": "PUT /api/video/settings"
   },
   {
    "cloud": false,

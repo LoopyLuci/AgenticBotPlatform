@@ -66,6 +66,9 @@ AREAS: dict[str, Area] = dict([
     _area("vision", "Vision", "👁", 164, routes=("/api/vision",), tools=("bot.vision.tools",), api="bot.dashboard.vision_api"),
     # likeness has no page of its own: a card in the Workspace, its routes only (Video Studio V3)
     _area("likeness", "Likeness", "", 164, routes=("/api/likeness",), panel=False, api="bot.dashboard.likeness_api"),
+    # Video Studio has no page of its own yet (V4): a card in the Workspace, its routes, tools and the job worker (V1)
+    _area("video", "Video Studio", "", 164, routes=("/api/video",), tools=("bot.video.tools",),
+          tasks=("bot.video.jobs:run_forever",), panel=False, api="bot.dashboard.video_api"),
     _area("hosting", "Hosting", "🌐", 165, routes=("/api/hosting",), tools=("bot.hosting.tools",),
           tasks=("bot.hosting.service:run_forever",), api="bot.dashboard.hosting_api"),
     _area("storage", "Storage", "🗄", 166, routes=("/api/fileserver",), tools=("bot.fileserver.tools",),

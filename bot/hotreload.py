@@ -201,6 +201,10 @@ DENYLIST: frozenset[str] = frozenset({
     # store.py the write lock, models.py the fetch lock.
     "bot.dashboard.likeness_api", "bot.likeness.jobs", "bot.likeness.engine", "bot.likeness.store",
     "bot.likeness.models", "bot.likeness.policy", "bot.likeness.provenance", "bot.likeness.onnxfix",
+    # Video Studio: routes register once and video_api.py holds the downloads; jobs.py holds the worker thread, the GPU
+    # process lock and the cancel set; store.py the schema-ready set; registry.py its lock; tools.py registers at import.
+    "bot.dashboard.video_api", "bot.video.jobs", "bot.video.store", "bot.video.backends", "bot.video.registry",
+    "bot.video.workflows", "bot.video.media", "bot.video.library", "bot.video.views", "bot.video.tools",
     # Hosting: routes register once and hosting_api.py holds the runs; tools.py registers at import time; store.py
     # holds the write lock, upnp.py the discovered router.
     "bot.dashboard.hosting_api", "bot.hosting.tools", "bot.hosting.store", "bot.hosting.upnp", "bot.hosting.service",
