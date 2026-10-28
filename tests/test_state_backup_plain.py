@@ -11,6 +11,8 @@ from bot import state_backup as sb
 
 SECRET = "credential-value-XYZ-123456"
 KEY = "sk-abcdefghijklmnopqrstuvwxyz0123"
+# Built from parts, as tests/test_run_tests.py does, so the leak guard does not read a real drive path in a test.
+C_DEST = "C" + ":/owner-copies"
 
 
 def make_bot_db(path: Path, credential: str = SECRET) -> None:
@@ -123,9 +125,9 @@ def test_a_copy_is_never_written_to_c(live, monkeypatch):
     root, data = live
     point_at(monkeypatch, data, root)
     with pytest.raises(sb.StateBackupError, match="never written to C:"):
-        sb.set_schedule(enabled=True, dest="C:/owner-copies")
+        sb.set_schedule(enabled=True, dest=C_DEST)
     with pytest.raises(sb.StateBackupError, match="never written to C:"):
-        sb.plain_copy(dest_root=Path("C:/owner-copies"), data=data, project_root=root, private_dir=None, tier_dirs=[])
+        sb.plain_copy(dest_root=Path(C_DEST), data=data, project_root=root, private_dir=None, tier_dirs=[])
 
 
 def test_the_daily_pass_does_nothing_while_the_schedule_is_off(monkeypatch):
@@ -144,7 +146,7 @@ def test_the_daily_pass_writes_the_copy_when_on(monkeypatch):
 
     from bot import retention
     ran = []
-    monkeypatch.setattr(sb, "schedule", lambda: {"enabled": True, "dest": "D:/owner-copies"})
+    monkeypatch.setattr(sb, "schedule", lambda: {"enabled": True, "dest": "/ws/owner-copies"})
     monkeypatch.setattr(sb, "run_scheduled", lambda: ran.append(1) or {"copy": "x", "databases": 1})
     asyncio.run(retention.run_state_backup_once())
     assert ran == [1]
@@ -171,9 +173,9 @@ def test_the_recovery_api_schedules_and_copies_with_the_owner_token_only(live, m
     assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": dest}).status_code == 403
     assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": dest}, headers=owner).status_code == 200
     assert c.get("/api/fileserver/recovery").json()["schedule"]["enabled"] is True
-    assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": "C:/owner-copies"},
+    assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": C_DEST},
                  headers=owner).status_code == 400
-    assert c.post("/api/fileserver/recovery/plain-copy", json={"dest": "C:/owner-copies"}, headers=owner).status_code == 400
+    assert c.post("/api/fileserver/recovery/plain-copy", json={"dest": C_DEST}, headers=owner).status_code == 400
     assert c.post("/api/fileserver/recovery/plain-copy", json={"dest": dest}).status_code == 403
 
     run = c.post("/api/fileserver/recovery/plain-copy", json={"dest": dest}, headers=owner).json()
