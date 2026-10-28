@@ -631,6 +631,8 @@ def test_the_mcp_tools_proxy_to_the_api_with_the_working_folder_as_default(monke
     assert seen["kwargs"]["params"]["root"]                    # the process's working folder
     asyncio.run(mcp_server.code_impact("x.py", root="/some/where"))
     assert seen["method"] == "POST" and seen["kwargs"]["json"] == {"changes": "x.py", "root": "/some/where"}
+    asyncio.run(mcp_server.code_catalog("docs", reason="binary", root="/r"))
+    assert seen["path"] == "/api/codeintel/catalog" and seen["kwargs"]["params"]["reason"] == "binary"
 
 
 def test_the_http_api_is_read_only_token_protected_and_limited_to_allowed_roots(repo, monkeypatch):
@@ -652,6 +654,7 @@ def test_the_http_api_is_read_only_token_protected_and_limited_to_allowed_roots(
     assert client.get("/api/codeintel/tests", params={"target": "pkg/core.py", "root": str(repo)}, headers=h).status_code == 200
     assert client.post("/api/codeintel/impact", json={"changes": "pkg/core.py", "root": str(repo)}, headers=h).status_code == 200
     assert client.post("/api/codeintel/pack", json={"task": "engine run", "root": str(repo), "budget_tokens": 800}, headers=h).status_code == 200
+    assert client.get("/api/codeintel/catalog", params={"root": str(repo)}, headers=h).status_code == 200
     assert client.get("/api/codeintel/read", params={"target": "nope", "root": str(repo)}, headers=h).status_code == 400
     assert client.post("/api/codeintel/index", json={"root": str(repo)}, headers=h).json()["files"] == 5
     assert client.get("/api/codeintel/stats", params={"root": str(repo)}, headers=h).json()["ci_symbols"] > 0

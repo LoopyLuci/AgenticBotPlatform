@@ -1311,6 +1311,18 @@ export const operations = {
    "max_tokens"
   ]
  },
+ "GET /api/codeintel/catalog": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/catalog",
+  "path_params": [],
+  "query_params": [
+   "folder",
+   "reason",
+   "root",
+   "max_tokens"
+  ]
+ },
  "GET /api/codeintel/find": {
   "body": false,
   "method": "GET",
@@ -12441,6 +12453,18 @@ export const operations = {
    "symbol",
    "root",
    "limit",
+   "max_tokens"
+  ]
+ },
+ "codeintel_catalog_api_codeintel_catalog_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/codeintel/catalog",
+  "path_params": [],
+  "query_params": [
+   "folder",
+   "reason",
+   "root",
    "max_tokens"
   ]
  },

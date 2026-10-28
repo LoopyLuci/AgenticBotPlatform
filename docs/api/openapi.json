@@ -16850,6 +16850,96 @@
     "summary": "Codeintel Callers"
    }
   },
+  "/api/codeintel/catalog": {
+   "get": {
+    "operationId": "codeintel_catalog_api_codeintel_catalog_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "folder",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Folder",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "reason",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Reason",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "root",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Root"
+      }
+     },
+     {
+      "in": "query",
+      "name": "max_tokens",
+      "required": false,
+      "schema": {
+       "default": 2500,
+       "title": "Max Tokens",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "x-dashboard-token",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Dashboard-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Codeintel Catalog"
+   }
+  },
   "/api/codeintel/find": {
    "get": {
     "operationId": "codeintel_find_api_codeintel_find_get",

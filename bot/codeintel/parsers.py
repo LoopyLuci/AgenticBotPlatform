@@ -380,7 +380,9 @@ def backends() -> list[Parser]:
             out.append(TreeSitterParser())
     except Exception:  # noqa: BLE001 - a broken install must not take the index down
         pass
-    out += [PythonAstParser(), RegexParser()]
+    from bot.codeintel.textparsers import MarkdownParser, SashParser
+
+    out += [PythonAstParser(), RegexParser(), SashParser(), MarkdownParser()]
     return out
 
 
@@ -394,7 +396,9 @@ def reset_backends() -> None:
 
 
 def source_suffixes() -> frozenset[str]:
-    suffixes = set(PY_SUFFIXES) | set(_regex_tables()[0])
+    from bot.codeintel.textparsers import MARKDOWN_SUFFIXES, SASH_SUFFIXES
+
+    suffixes = set(PY_SUFFIXES) | set(_regex_tables()[0]) | SASH_SUFFIXES | MARKDOWN_SUFFIXES
     try:
         from bot.codeintel.treesitter import SUFFIXES
 

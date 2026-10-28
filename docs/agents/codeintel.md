@@ -58,6 +58,36 @@ Pluggable (`bot/codeintel/parsers.py`): the first backend that handles a file an
    packages ABP runs as before.
 2. **python-ast** - the same data for Python from the standard library.
 3. **regex** - repo_map's declaration patterns plus brace/`end` matching for end lines; a heuristic for the other languages.
+4. **sash** (`textparsers.py`) - `fun` / `pub fun` (methods inside `class`), `class` / `struct` / `enum` / `trait`, calls,
+   `import a.b` (resolved to `a/b.sash` in the importing file's folder or the nearest ancestor that has it, else the one file
+   ending with that path), and each `act("name", "doc")` entry of an action catalog as an `action` symbol, so
+   `find_symbol("window.snap")` lands on the action.
+5. **markdown** (`textparsers.py`) - every heading outside a code fence is a `section` symbol nested under its parent heading
+   (`outline` of a document is its table of contents with line ranges; `read_symbol("doc.md:LINE")` returns one section),
+   the first text line under it is its doc, and relative links are imports resolved to the files they point at.
+
+## The catalog: every file, with a reason
+
+The symbol index holds only files it can parse. A full update also refreshes `ci_catalog` (`catalog.py`): one row for
+every file the listing returns, with size, content hash, text or binary, and a status - `indexed`, or `catalogued` with
+the reason it was not parsed (`not-source`, `too-large`, `binary`, `generated`, `skipped-folder`, `empty`). Rows are
+re-hashed only when size or mtime change and removed when the file goes. `python -m bot.codeintel catalog [FOLDER]
+[--reason R]` (library: `tools.catalog_report`) prints the coverage by status and by entry, the files only catalogued
+and why, and the Markdown links whose target is not on disk.
+
+## Summaries from a local model
+
+`python -m bot.codeintel summarize --model M [FOLDER] [--limit N] [--budget-s S]` (`summaries.py`) asks a model on the
+local ModelMistress hub for a two-to-three-sentence summary of each catalogued text file that has none for its current
+content hash, smallest files first. One tool-less chat call per file: the model sees only the file's text (cut to
+24,000 characters, marked when cut), sent as data, and cannot read or write anything else. Summaries live in
+`ci_summaries`, keyed by path and hash, so a re-run only covers new or changed files; `outline` shows a file's summary
+under its header. Nothing summarizes on its own: a run is started by hand.
+
+`--via` picks the route: `hub` (default, the ModelMistress client), `mm` (the hub's own OpenAI API with a peer key from
+the hub's `key.create`, in `MODELMISTRESS_URL` and `MODELMISTRESS_KEY`; keep the key in the environment only), `abp`
+(a running ABP's relay) or `server` (a model server's port on this machine). `mm` and `server` refuse non-loopback
+addresses. A failed file is not stored, so a re-run retries it; the run prints each failure's reason.
 
 Known limits: references and callers resolve by name plus import links, not types (`x.run()` cannot tell which class's `run`;
 the answer says when a name is ambiguous); the bundled Kotlin grammar mis-parses `object Name { ... }` blocks; dynamic
@@ -68,7 +98,7 @@ dispatch, re-exports through `__init__`, star imports and non-Python/JS import r
 - **Native agent:** the eight tools above, registered like `repo_map` / `code_search` (`bot/codeintel/agent_tools.py`), read-only and concurrency-safe, working in the agent's workspace.
 - **MCP** (`bot/mcp_server.py`): `code_outline`, `code_find_symbol`, `code_read_symbol`, `code_references`, `code_callers`, `code_related_tests`, `code_impact`, `code_context_pack`. `root` defaults to the MCP process's working folder (for Claude Code, the project it was started in).
 - **HTTP API** (`/api/codeintel/...`, dashboard token): `stats`, `index`, `outline`, `find`, `read`, `refs`, `callers`, `tests`, `impact`, `pack`. `root` must be ABP's own folder or listed in `native_agent.codeintel.roots`.
-- **CLI:** `python -m bot.codeintel [--root DIR] index|outline|find|read|refs|callers|tests|impact|pack|stats|bench` (`--json`, `--max-tokens`).
+- **CLI:** `python -m bot.codeintel [--root DIR] index|outline|find|read|refs|callers|tests|impact|pack|stats|bench|catalog|summarize` (`--json`, `--max-tokens`).
 - **Library:** `from bot.codeintel import index_repo, outline, find_symbol, read_symbol, references, callers, related_tests, impact, context_pack, stats` - each returns a `Result(text, tokens, data, truncated)`.
 
 ```yaml

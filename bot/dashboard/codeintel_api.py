@@ -10,6 +10,7 @@
     GET  /api/codeintel/tests?target=&root=              tests for a file or symbol
     POST /api/codeintel/impact       {changes, root?}    symbols, callers and tests touched by a diff or paths
     POST /api/codeintel/pack         {task, budget_tokens?, root?}   a budgeted context bundle
+    GET  /api/codeintel/catalog?folder=&reason=&root=    every listed file: indexed or only catalogued (and why), broken links
 
 `root` defaults to ABP's code folder; other folders must be listed under native_agent.codeintel.roots. Every answer is
 {"text", "tokens", "truncated", "data"}.
@@ -84,3 +85,7 @@ def register(app: FastAPI, auth: Callable) -> None:
     async def codeintel_pack(body: dict = Body(...)):
         return await run(tools.context_pack, root_of(body.get("root")), str(body.get("task") or ""),
                          budget_tokens=int(body.get("budget_tokens") or 4000))
+
+    @app.get("/api/codeintel/catalog", dependencies=dep)
+    async def codeintel_catalog(folder: str = "", reason: str = "", root: Optional[str] = None, max_tokens: int = 2500):
+        return await run(tools.catalog_report, root_of(root), folder, reason=reason, max_tokens=max_tokens)

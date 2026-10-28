@@ -1489,6 +1489,14 @@ async def code_context_pack(task: str, budget_tokens: int = 4000, root: str = ""
                           json={"task": task, "budget_tokens": budget_tokens, "root": _code_root(root)})
 
 
+@mcp.tool()
+async def code_catalog(folder: str = "", reason: str = "", root: str = "", max_tokens: int = 2500) -> Any:
+    """Every file git lists under a folder: whether it is indexed or only catalogued (reason: not-source, too-large,
+    binary, generated, skipped-folder, empty), plus broken Markdown links. Use to see what the index does not cover."""
+    return await _request("GET", "/api/codeintel/catalog", timeout=120.0,
+                          params={"folder": folder, "reason": reason, "root": _code_root(root), "max_tokens": max_tokens})
+
+
 # ---- the capacity governor (bot/capacity) -------------------------------------------
 @mcp.tool()
 async def capacity_status() -> Any:
