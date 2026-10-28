@@ -7,7 +7,8 @@
 //   Search     the content index: search by words / meaning, duplicates, index now
 //   Jobs       remotes, transfer jobs (copy / mirror / two-way), backups (encrypted, deduplicated) with restore
 //   Apps       one-click containers on the shares (Jellyfin, Nextcloud, Immich, Syncthing...)
-//   Recovery   files agents removed (restore, or purge after retention); the state backup's last run and last drill
+//   Recovery   files agents removed (restore, or purge after retention); the state backup's last run and last drill;
+//              a plain copy (copy now, or every day when turned on, never to C:)
 // Identical in the dashboard (bot/dashboard/static/) and the desktop app (desktop-app/ui/); tests/test_fileserver.py
 // fails if the two differ. It uses the page's own api(), esc() and showToast(), and draws into #stp-root.
 (function (api) {
@@ -202,12 +203,20 @@ ${inv.smartctl ? '' : '<p class="stp-muted">Install smartmontools (smartctl) for
 ${(run.unlisted || []).length ? `<div>${chip('warn', `${run.unlisted.length} database(s) in no store`)} <span class="stp-muted stp-mono">${E(run.unlisted.map((x) => x.path).join(', '))}</span></div>` : ''}` : '<div class="stp-muted">No state backup has run yet.</div>';
     const drillBad = drill ? drill.bad_files.length + drill.bad_databases.length : 0;
     const drillCard = drill ? `<div>Last check ${isoWhen(drill.at)}: ${chip(drill.ok && !drillBad ? 'ok' : 'bad', drill.ok && !drillBad ? 'verified' : 'failed')} ${E(drill.files)} files, ${E(drill.databases)} databases${drillBad ? `<div class="stp-muted stp-mono">${E([...drill.bad_files, ...drill.bad_databases].join(', '))}</div>` : ''}</div>` : '<div class="stp-muted">No restore check has run yet.</div>';
+    const sched = r.schedule || { enabled: false, dest: '' };
+    const plain = sb.last_plain;
+    const plainCard = `<div class="stp-card"><b>Plain copy</b>${plain ? `<div>Last copy ${isoWhen(plain.at)}: ${E(plain.databases)} databases (${E(plain.unlisted_copied)} unlisted), ${chip('ok', 'verified')}</div><div class="stp-muted stp-mono">${E(plain.copy)}</div><div class="stp-muted">Left out: ${E((plain.excluded || []).join(', ') || 'nothing')}</div>` : '<div class="stp-muted">No plain copy yet.</div>'}
+<div class="stp-row"><input id="stp-p-dest" value="${E(sched.dest)}" placeholder="a folder on another drive, not C:" style="flex:1;min-width:200px"><button class="btn ghost" id="stp-p-run">Copy now</button></div>
+<label class="stp-row"><input type="checkbox" id="stp-p-on"${sched.enabled ? ' checked' : ''}> Copy every day (off until ticked)</label>
+<div class="stp-row"><button class="btn ghost" id="stp-p-save">Save schedule</button></div>
+<div class="stp-muted">Unencrypted, so keep that drive private. Config files with API keys are never copied, credential columns are blanked, key-shaped text is redacted, and a copy that fails the check is removed.</div>
+<div class="stp-log" id="stp-p-log" style="display:none"></div></div>`;
     return `<p class="stp-muted">Files agents remove are moved here, not deleted. Restore puts one back where it was and never overwrites a file that exists again. Purge is permanent and waits for the retention period.</p>
 <div class="stp-grid"><div class="stp-card" style="grid-column:1/-1"><b>Removed by agents</b>
 <table class="stp-table">${r.trash.map(trashRow).join('') || '<tr><td class="stp-muted">Nothing in the trash.</td></tr>'}</table>
 <div class="stp-muted">Kept ${E(r.retention_days)} days.</div></div>
 <div class="stp-card"><b>State backup</b>${runCard}<div class="stp-muted">Runs from the terminal: <span class="stp-mono">python -m bot.state_backup run --repo &lt;folder&gt;</span>, with the password in ABP_STATE_BACKUP_PASSWORD. This page shows the results.</div></div>
-<div class="stp-card"><b>Restore check</b>${drillCard}<div class="stp-muted">The check restores the newest backup into a scratch folder and verifies every file, database and row count.</div></div></div>`;
+<div class="stp-card"><b>Restore check</b>${drillCard}<div class="stp-muted">The check restores the newest backup into a scratch folder and verifies every file, database and row count.</div></div>${plainCard}</div>`;
   }
 
   // ---- wiring ----
@@ -283,6 +292,8 @@ ${(run.unlisted || []).length ? `<div>${chip('warn', `${run.unlisted.length} dat
     // recovery
     each('[data-trestore]', (b) => act(() => send(`${A}/recovery/trash/restore`, 'POST', { id: b.dataset.trestore }), 'Restored'));
     each('[data-tpurge]', (b) => { if (confirm('Purge this file for good? It cannot be recovered after this.')) act(() => send(`${A}/recovery/trash/purge`, 'POST', { id: b.dataset.tpurge }), 'Purged'); });
+    on('stp-p-run', () => runInto(send(`${A}/recovery/plain-copy`, 'POST', { dest: $('stp-p-dest').value.trim() }), 'stp-p-log'));
+    on('stp-p-save', () => act(() => send(`${A}/recovery/schedule`, 'PUT', { enabled: $('stp-p-on').checked, dest: $('stp-p-dest').value.trim() }), 'Schedule saved'));
     // apps
     each('[data-app]', (b) => {
       const id = b.dataset.app; const mounts = {};

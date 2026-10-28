@@ -58,6 +58,22 @@ async def run_once() -> None:
             db.vacuum(actor="retention", detail=f"automatic VACUUM (every {vacuum_every}d)")
 
 
+async def run_state_backup_once() -> None:
+    """The daily plain state copy, when the owner has turned it on (bot/state_backup.py schedule). It runs in a
+    thread: it reads and copies databases. A failed copy is logged; it never stops the loop."""
+    from bot import state_backup
+
+    if not state_backup.schedule()["enabled"]:
+        return
+    try:
+        summary = await asyncio.to_thread(state_backup.run_scheduled)
+        logger.info("daily plain state copy written to %s (%d database(s))", summary["copy"], summary["databases"])
+    except state_backup.StateBackupError as exc:
+        logger.warning("daily plain state copy refused: %s", exc)
+    except Exception:
+        logger.exception("daily plain state copy failed")
+
+
 async def run_forever(stop_event: asyncio.Event) -> None:
     logger.info("retention pruning started (every %ds, config-driven)", RUN_INTERVAL_S)
     while not stop_event.is_set():
@@ -65,6 +81,7 @@ async def run_forever(stop_event: asyncio.Event) -> None:
             await run_once()
         except Exception:
             logger.exception("retention pruning pass failed")
+        await run_state_backup_once()
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=RUN_INTERVAL_S)
         except asyncio.TimeoutError:

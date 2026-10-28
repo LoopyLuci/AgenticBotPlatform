@@ -21,8 +21,13 @@ every SQLite integrity_check, and every recorded row count. It never touches the
     python -m bot.state_backup run   --repo <folder>     [--password-env ABP_STATE_BACKUP_PASSWORD]
     python -m bot.state_backup drill --repo <folder>     [--password-env ...]
     python -m bot.state_backup status
+    python -m bot.state_backup plain --dest <folder>     (no password: an unencrypted copy, see plain_copy)
 
 The repository password is never stored. Without the environment variable it is asked for at the terminal.
+
+The plain copy is for a drive the owner keeps private. It never carries a live credential: the configuration files are
+left out, credential columns are blanked in every copied database, key-shaped text is redacted, and the copy is checked
+before it is kept (a copy that fails the check is removed).
 """
 from __future__ import annotations
 
@@ -31,6 +36,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -323,6 +329,211 @@ def _defaults() -> tuple[Path, Path, Optional[Path], list[tuple[str, Path]]]:
     return data, project, Path(private) if private else None, tiers
 
 
+# ---- plain copy: unencrypted, for a drive the owner keeps private, with no live credential in it -----------------------
+# The owner chose a copy without a password. It still must not carry what would let someone into a service: the
+# configuration files (they hold API keys) are left out, the credential columns are blanked in each copy, key-shaped
+# text is redacted, and a leak check runs before the copy is kept.
+SECRET_CONFIG_PREFIXES = ("config/", "private/config/")
+CREDENTIAL_COLUMNS = (
+    ("bot_instances", "credentials"), ("push_tokens", "fcm_token"), ("apk_pushes", "mesh_token"),
+    ("peer_servers", "outbound_api_key"), ("external_mcp_servers", "auth_token"),
+    ("external_mcp_servers", "oauth_client_info_json"), ("external_mcp_servers", "oauth_tokens_json"),
+)
+KEY_SHAPED = (
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"), re.compile(r"ghp_[A-Za-z0-9]{30,}"), re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
+)
+KEY_SHAPED_BYTES = re.compile(rb"sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}"
+                              rb"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+MIN_SECRET_LEN = 8        # shorter values are too common to be a meaningful match in a binary file
+
+
+def _tables(conn: sqlite3.Connection) -> dict[str, set[str]]:
+    return {t: {r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')}
+            for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+
+def _live_credentials(sources: list[Path]) -> set[bytes]:
+    """The non-empty credential values in the live databases, read-only. Kept in memory for the leak check only."""
+    values: set[bytes] = set()
+    for src in sources:
+        conn = sqlite3.connect(f"file:{src.as_posix()}?mode=ro", uri=True, timeout=30)
+        try:
+            tables = _tables(conn)
+            for table, col in CREDENTIAL_COLUMNS:
+                if col not in tables.get(table, set()):
+                    continue
+                for (value,) in conn.execute(f'SELECT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL AND "{col}" <> \'\''):
+                    values.add(value.encode("utf-8") if isinstance(value, str) else bytes(value))
+        finally:
+            conn.close()
+    return values
+
+
+def _scrub_copy(db: Path) -> dict[str, int]:
+    """Blank the credential columns of one copy, redact key-shaped text in its text columns, then rebuild it so no old
+    value survives in free pages (secure_delete, then VACUUM). Returns how many values changed, per column."""
+    changed: dict[str, int] = {}
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("PRAGMA secure_delete = ON")
+        tables = _tables(conn)
+        for table, col in CREDENTIAL_COLUMNS:
+            if col not in tables.get(table, set()):
+                continue
+            n = conn.execute(f"UPDATE \"{table}\" SET \"{col}\" = '' WHERE \"{col}\" IS NOT NULL AND \"{col}\" <> ''").rowcount
+            if n:
+                changed[f"{table}.{col}"] = n
+        for table, cols in tables.items():
+            for col in cols:
+                try:
+                    rows = conn.execute(f'SELECT rowid, "{col}" FROM "{table}" WHERE typeof("{col}") = \'text\'').fetchall()
+                except sqlite3.DatabaseError:
+                    continue          # a table without rowids: nothing to rewrite row by row
+                n = 0
+                for rowid, value in rows:
+                    new = value
+                    for pattern in KEY_SHAPED:
+                        new = pattern.sub("[redacted]", new)
+                    if new != value:
+                        conn.execute(f'UPDATE "{table}" SET "{col}" = ? WHERE rowid = ?', (new, rowid))
+                        n += 1
+                if n:
+                    changed[f"{table}.{col} (key-shaped text)"] = n
+        conn.commit()
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+    return changed
+
+
+def _refresh_manifest(dest: Path) -> None:
+    """Record the copies' bytes as they are now (the scrub changed the databases)."""
+    path = dest / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    for entry in manifest["files"]:
+        if entry["kind"] == "sqlite":
+            target = dest / entry["path"]
+            entry["sha256"] = _sha256(target)
+            entry["size"] = target.stat().st_size
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def _leak_check(dest: Path, values: set[bytes]) -> dict:
+    """Which copied files still hold a live credential value or a key-shaped string. Names only, never the text."""
+    checked = [v for v in values if len(v) >= MIN_SECRET_LEN]
+    with_value, with_shape, files = [], [], 0
+    for f in sorted(dest.rglob("*")):
+        if not f.is_file():
+            continue
+        files += 1
+        data = f.read_bytes()
+        rel = f.relative_to(dest).as_posix()
+        if any(v in data for v in checked):
+            with_value.append(rel)
+        if KEY_SHAPED_BYTES.search(data):
+            with_shape.append(rel)
+    return {"files": files, "credential_values_checked": len(checked),
+            "files_with_a_credential": with_value, "files_with_key_shaped_text": with_shape}
+
+
+def plain_copy(*, dest_root: Path, data: Path, project_root: Path, private_dir: Optional[Path],
+               tier_dirs: list[tuple[str, Path]], fileserver_dir: Optional[Path] = None,
+               log: Callable[[str], None] = lambda m: None) -> dict:
+    """An unencrypted copy of the state, written to a new folder under dest_root and checked before it is kept.
+
+    Every planned store is copied, and so is every unlisted database (as unlisted/<path>). Configuration files (they hold
+    API keys) are not copied; credential columns are blanked in each copied database; key-shaped text is redacted. A
+    copy that still holds a live credential value or key-shaped text fails the check, is removed, and is refused.
+    The live stores are read, never written."""
+    check_destination(dest_root)
+    plan = collect(data=data, project_root=project_root, private_dir=private_dir, tier_dirs=tier_dirs,
+                   fileserver_dir=fileserver_dir)
+    kept = []
+    for rel, src in plan.files:
+        if rel.startswith(SECRET_CONFIG_PREFIXES):
+            plan.excluded.append({"label": rel, "path": rel, "reason": "secret-bearing config: never copied unencrypted"})
+        else:
+            kept.append((rel, src))
+    plan.files = kept
+    plan.sqlite += [(f"unlisted/{rel}", data / rel) for rel in plan.unlisted]
+    values = _live_credentials([src for _, src in plan.sqlite])
+    dest = dest_root / f"plain-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    log(f"plain copy: {len(plan.files)} file(s), {len(plan.sqlite)} database(s) -> {dest}")
+    stage(plan, dest)
+    try:
+        changed = {rel: _scrub_copy(dest / rel) for rel, _ in plan.sqlite}
+        _refresh_manifest(dest)
+        check = _leak_check(dest, values)
+        report = verify(dest)
+        if check["files_with_a_credential"] or check["files_with_key_shaped_text"] or not report["ok"]:
+            raise StateBackupError(
+                f"the plain copy failed its check and was removed: credential values in "
+                f"{check['files_with_a_credential'] or 'none'}; key-shaped text in "
+                f"{check['files_with_key_shaped_text'] or 'none'}; verify ok={report['ok']}")
+    except Exception:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
+    summary = {"copy": str(dest), "files": len(plan.files), "databases": len(plan.sqlite),
+               "changed": {rel: counts for rel, counts in changed.items() if counts},
+               "excluded": [e["label"] for e in plan.excluded], "unlisted_copied": len(plan.unlisted),
+               "credential_values_checked": check["credential_values_checked"], "verify_ok": True, "at": _now()}
+    _write_status(data, {"last_plain": summary})
+    return summary
+
+
+def check_destination(dest: Path) -> None:
+    """A plain copy goes to a folder the owner chose: an absolute path, never on C:."""
+    text = str(dest).strip()
+    if not text or not dest.is_absolute():
+        raise StateBackupError("the copy folder must be an absolute path (a drive other than C:)")
+    if os.path.splitdrive(text)[0].upper() == "C:":
+        raise StateBackupError("a plain copy is never written to C: (choose a folder on another drive)")
+
+
+def run_plain(dest_root: Path, log: Callable[[str], None] = lambda m: None) -> dict:
+    """plain_copy against this instance's own folders (the data folder, the project, the private overlay, the tiers)."""
+    data, project, private, tiers = _defaults()
+    return plain_copy(dest_root=dest_root, data=data, project_root=project, private_dir=private, tier_dirs=tiers, log=log)
+
+
+def _schedule_path() -> Path:
+    return _defaults()[0] / "state_backup" / "schedule.json"
+
+
+def schedule() -> dict:
+    """The daily plain copy: off until the owner turns it on, and the folder it writes to."""
+    path = _schedule_path()
+    stored: dict = {}
+    if path.is_file():
+        try:
+            stored = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            stored = {}
+    return {"enabled": bool(stored.get("enabled", False)), "dest": str(stored.get("dest") or "")}
+
+
+def set_schedule(*, enabled: bool, dest: str) -> dict:
+    dest = (dest or "").strip()
+    if dest:
+        check_destination(Path(dest))
+    if enabled and not dest:
+        raise StateBackupError("choose the folder the daily copy goes to before turning it on")
+    path = _schedule_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"enabled": bool(enabled), "dest": dest}, indent=2), encoding="utf-8")
+    return schedule()
+
+
+def run_scheduled() -> dict:
+    """One scheduled pass: a plain copy into the chosen folder, when the owner has turned the schedule on."""
+    sched = schedule()
+    if not sched["enabled"]:
+        raise StateBackupError("the daily plain copy is off")
+    return run_plain(Path(sched["dest"]))
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m bot.state_backup", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -331,11 +542,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         p.add_argument("--repo", type=Path, required=True, help="the backup repository folder (another drive, not C:)")
         p.add_argument("--password-env", default=DEFAULT_PASSWORD_ENV, help="environment variable holding the password")
     sub.add_parser("status", help="when the last backup and drill ran")
+    plain = sub.add_parser("plain", help="an unencrypted copy with no live credential in it, checked before it is kept")
+    plain.add_argument("--dest", type=Path, required=True, help="the folder to put the copy in (another drive, not C:)")
     args = parser.parse_args(argv)
     data, project, private, tiers = _defaults()
     try:
         if args.cmd == "status":
             result = status(data)
+        elif args.cmd == "plain":
+            result = plain_copy(dest_root=args.dest, data=data, project_root=project, private_dir=private,
+                                tier_dirs=tiers, log=lambda m: print(m, file=sys.stderr))
         else:
             if args.cmd == "drill" and not (args.repo / "config.json").exists():
                 raise StateBackupError(f"{args.repo} is not a backup repository yet (run a state backup first)")

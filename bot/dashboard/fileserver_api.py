@@ -25,12 +25,15 @@
                                                    POST /tiering/apply | /tiering/recall {path}  (dashboard token only)
     GET    /api/fileserver/recovery                trash (what agents removed), retention, the state backup's last run and drill
                                                    POST /recovery/trash/restore | /trash/purge {id}  (dashboard token only)
+                                                   PUT /recovery/schedule {enabled, dest}; POST /recovery/plain-copy {dest} -> a run
+                                                   (the daily plain state copy and its folder; dashboard token only)
 """
 from __future__ import annotations
 
 import asyncio
 import hmac
 import os
+from pathlib import Path
 from typing import Callable, Optional
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
@@ -326,7 +329,8 @@ def register(app: FastAPI, require_token: Callable) -> None:
     @app.get(f"{A}/recovery", dependencies=dep)
     async def fs_recovery():
         return {"trash": await asyncio.to_thread(trash.items), "retention_days": trash.RETENTION_DAYS,
-                "state_backup": await asyncio.to_thread(state_backup.current_status)}
+                "state_backup": await asyncio.to_thread(state_backup.current_status),
+                "schedule": await asyncio.to_thread(state_backup.schedule)}
 
     @app.post(f"{A}/recovery/trash/restore", dependencies=[Depends(operator)])
     async def fs_trash_restore(body: dict = Body(...)):
@@ -335,6 +339,23 @@ def register(app: FastAPI, require_token: Callable) -> None:
     @app.post(f"{A}/recovery/trash/purge", dependencies=[Depends(operator)])
     async def fs_trash_purge(body: dict = Body(...)):
         return await _trash(lambda item_id: trash.purge(item_id, owner=True), str(body.get("id") or ""))
+
+    @app.put(f"{A}/recovery/schedule", dependencies=[Depends(operator)])
+    async def fs_schedule_set(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(state_backup.set_schedule, enabled=bool(body.get("enabled")),
+                                           dest=str(body.get("dest") or ""))
+        except state_backup.StateBackupError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.post(f"{A}/recovery/plain-copy", dependencies=[Depends(operator)])
+    async def fs_plain_copy(body: dict = Body(...)):
+        dest = str(body.get("dest") or "").strip()
+        try:
+            state_backup.check_destination(Path(dest))
+        except state_backup.StateBackupError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return _run("Plain state copy", lambda log: state_backup.run_plain(Path(dest), log))
 
     @app.get(f"{A}/events", dependencies=dep)
     async def fs_events(limit: int = Query(100)):
