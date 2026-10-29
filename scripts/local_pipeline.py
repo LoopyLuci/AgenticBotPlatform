@@ -849,11 +849,11 @@ def _hw_gate(kind: str, want: int, label: str) -> Optional[int]:
     if res.get("holder"):
         import atexit
         atexit.register(slot.release)
-    v = governor.verdict()
-    got = governor.cap(kind, want)
+    got = governor.cap(kind, want)               # returns at once when the guard is off; no reading is taken then
     if got < want:
+        v = governor.verdict()
         Step.warn(f"hardware guard ({v['level']}): {kind} workers {want} -> {got}: " + "; ".join(v["reasons"]))
-    _RUN.note(f"hardware guard: {v['level']}, {kind} workers {got}", "info")
+    _RUN.note(f"hardware guard: {kind} workers {got} of {want}", "info")
     return max(1, got)
 
 
