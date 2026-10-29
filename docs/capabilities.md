@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 61 |
 | action | 102 |
-| route | 1118 |
+| route | 1123 |
 | module | 10 |
 | setting | 72 |
 
