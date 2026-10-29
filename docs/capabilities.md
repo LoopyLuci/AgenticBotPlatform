@@ -6,7 +6,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 |---|---|
 | page | 60 |
 | action | 102 |
-| route | 1113 |
+| route | 1118 |
 | module | 10 |
 | setting | 72 |
 
@@ -656,7 +656,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/files/{root}/download` Api Files Download
 - `POST /api/files` Api Files Add Root
 
-### fileserver (52)
+### fileserver (57)
 
 - `DELETE /api/fileserver/backups/{name}` Fs Backup Rm
 - `DELETE /api/fileserver/links/{token}` Fs Link Rm
@@ -677,6 +677,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `GET /api/fileserver/index` Fs Index
 - `GET /api/fileserver/links` Fs Links
 - `GET /api/fileserver/pools` Fs Pools
+- `GET /api/fileserver/recovery` Fs Recovery
 - `GET /api/fileserver/remotes` Fs Remotes
 - `GET /api/fileserver/runs/{rid}` Fs Run
 - `GET /api/fileserver/search` Fs Search
@@ -697,6 +698,9 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `POST /api/fileserver/guard/unfreeze` Fs Unfreeze
 - `POST /api/fileserver/index` Fs Index Run
 - `POST /api/fileserver/mover` Fs Mover
+- `POST /api/fileserver/recovery/plain-copy` Fs Plain Copy
+- `POST /api/fileserver/recovery/trash/purge` Fs Trash Purge
+- `POST /api/fileserver/recovery/trash/restore` Fs Trash Restore
 - `POST /api/fileserver/server/{action}` Fs Server
 - `POST /api/fileserver/shares` Fs Share Add
 - `POST /api/fileserver/tiering/apply` Fs Tiering Apply
@@ -707,6 +711,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 - `PUT /api/fileserver/backups/{name}` Fs Backup Set
 - `PUT /api/fileserver/guard` Fs Guard Set
 - `PUT /api/fileserver/pools/{name}` Fs Pool Set
+- `PUT /api/fileserver/recovery/schedule` Fs Schedule Set
 - `PUT /api/fileserver/remotes/{name}` Fs Remote Set
 - `PUT /api/fileserver/settings` Fs Settings Put
 - `PUT /api/fileserver/transfers/{name}` Fs Transfer Set

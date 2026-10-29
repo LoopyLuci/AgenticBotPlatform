@@ -2055,6 +2055,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/fileserver/recovery": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/recovery",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/fileserver/remotes": {
   "body": false,
   "method": "GET",
@@ -5935,6 +5942,27 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/fileserver/recovery/plain-copy": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/plain-copy",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/recovery/trash/purge": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/purge",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/fileserver/recovery/trash/restore": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/restore",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/fileserver/server/{action}": {
   "body": false,
   "method": "POST",
@@ -8871,6 +8899,13 @@ export const operations = {
   "path_params": [
    "name"
   ],
+  "query_params": []
+ },
+ "PUT /api/fileserver/recovery/schedule": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/recovery/schedule",
+  "path_params": [],
   "query_params": []
  },
  "PUT /api/fileserver/remotes/{name}": {
@@ -13335,6 +13370,13 @@ export const operations = {
    "deep"
   ]
  },
+ "fs_plain_copy_api_fileserver_recovery_plain_copy_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/plain-copy",
+  "path_params": [],
+  "query_params": []
+ },
  "fs_pool_rm_api_fileserver_pools__name__delete": {
   "body": false,
   "method": "DELETE",
@@ -13357,6 +13399,13 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/fileserver/pools",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_recovery_api_fileserver_recovery_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/fileserver/recovery",
   "path_params": [],
   "query_params": []
  },
@@ -13395,6 +13444,13 @@ export const operations = {
   "query_params": [
    "since"
   ]
+ },
+ "fs_schedule_set_api_fileserver_recovery_schedule_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/fileserver/recovery/schedule",
+  "path_params": [],
+  "query_params": []
  },
  "fs_search_api_fileserver_search_get": {
   "body": false,
@@ -13561,6 +13617,20 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/fileserver/transfers",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_trash_purge_api_fileserver_recovery_trash_purge_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/purge",
+  "path_params": [],
+  "query_params": []
+ },
+ "fs_trash_restore_api_fileserver_recovery_trash_restore_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/fileserver/recovery/trash/restore",
   "path_params": [],
   "query_params": []
  },

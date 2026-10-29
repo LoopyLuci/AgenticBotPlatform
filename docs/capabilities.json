@@ -4,7 +4,7 @@
   "action": 102,
   "module": 10,
   "page": 60,
-  "route": 1113,
+  "route": 1118,
   "setting": 72
  },
  "entries": [
@@ -3927,6 +3927,16 @@
    "label": "Fs Pools",
    "network": false,
    "where": "GET /api/fileserver/pools"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:GET /api/fileserver/recovery",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Recovery",
+   "network": false,
+   "where": "GET /api/fileserver/recovery"
   },
   {
    "cloud": false,
@@ -8651,6 +8661,36 @@
   {
    "cloud": false,
    "desc": "API (fileserver)",
+   "id": "route:POST /api/fileserver/recovery/plain-copy",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Plain Copy",
+   "network": false,
+   "where": "POST /api/fileserver/recovery/plain-copy"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:POST /api/fileserver/recovery/trash/purge",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Trash Purge",
+   "network": false,
+   "where": "POST /api/fileserver/recovery/trash/purge"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:POST /api/fileserver/recovery/trash/restore",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Trash Restore",
+   "network": false,
+   "where": "POST /api/fileserver/recovery/trash/restore"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
    "id": "route:POST /api/fileserver/server/{action}",
    "keywords": "fileserver",
    "kind": "route",
@@ -12417,6 +12457,16 @@
    "label": "Fs Pool Set",
    "network": false,
    "where": "PUT /api/fileserver/pools/{name}"
+  },
+  {
+   "cloud": false,
+   "desc": "API (fileserver)",
+   "id": "route:PUT /api/fileserver/recovery/schedule",
+   "keywords": "fileserver",
+   "kind": "route",
+   "label": "Fs Schedule Set",
+   "network": false,
+   "where": "PUT /api/fileserver/recovery/schedule"
   },
   {
    "cloud": false,

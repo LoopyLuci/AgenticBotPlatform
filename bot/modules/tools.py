@@ -309,5 +309,8 @@ def register_tools() -> None:
          "id": {"type": "string"}, "name": {"type": "string"}, "module": MODULE, "dry_run": {"type": "boolean"},
          "push": {"type": "boolean"}}, [], adopt, permission="config", read_only=False)
 
+    from bot.modules import owner_drive
+    owner_drive.register_tool(_enabled)
+
 
 register_tools()

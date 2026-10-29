@@ -446,6 +446,7 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.swarm.observability",  # only ever imported lazily (inside a function body), so no ordering constraint from anything else here
     "bot.setup_wizard",
     "bot.snapshots",
+    "bot.state_backup",  # stateless: stages copies and calls the File Server backup module lazily inside its functions
     "bot.ui_customize",  # pure functions + disk-backed history, no module-level mutable state; moa/providers/models/dashboard.server are all imported lazily inside function bodies, so no ordering constraint from them
     "bot.agent_control",
     "bot.backends.base",
@@ -467,6 +468,8 @@ _TIER3_LEAVES: tuple[str, ...] = (
     "bot.capabilities.tool",  # the abp_capabilities tool (reads the capability index lazily); imported by tools.py below
     "bot.agent_runtime.tools",
     "bot.agent_runtime.checkpoints",
+    "bot.agent_runtime.trash",  # stateless file moves for the agent's removals; coding_tools (denylisted) reaches it as a module attribute
+    "bot.modules.owner_drive",  # stateless request builder: calls harness.call for one DriveTier operation, registers its tool when tools.py asks
     "bot.agent_runtime.tool_loop",
     "bot.agent_runtime.output_schema",
     "bot.agent_runtime.subagents",

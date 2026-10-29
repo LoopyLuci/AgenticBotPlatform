@@ -2,7 +2,9 @@
 
     edit_file    replace text in a file (exact match, with a careful fuzzy fallback)
     multi_edit   several edits to one file, all or nothing
-    apply_patch  a unified diff across one or more files, all or nothing
+    apply_patch  a unified diff across one or more files, all or nothing; removed files go to the trash
+    trash_list   files this workspace removed that are still in the trash
+    trash_restore  put a trashed file back (never over a live path)
     grep         search file contents (regular expressions)
     glob         find files by pattern
     todo_write / todo_read   the agent's own task list for the session
@@ -29,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from bot.agent_runtime import toolspec
+from bot.agent_runtime import toolspec, trash
 from bot.agent_runtime.errors import ToolError, safe_path
 from bot.agent_runtime.state import safe_name, state_dir
 
@@ -379,6 +381,9 @@ async def _apply_patch(inp: dict, *, workspace: Path, instance_id=None, device_t
         src = safe_path(workspace, fp.old_name)
         if not src.is_file():
             raise ToolError(f"{fp.old_name} does not exist")
+        named = Path(workspace) / fp.old_name                 # safe_path resolves links; the name the patch gave is what matters
+        if named.is_symlink() and (fp.new_name is None or fp.new_name != fp.old_name):
+            raise ToolError(f"{fp.old_name} is a link; apply_patch does not delete or rename links (nothing was changed)")
         require_fresh(src, fp.old_name)
         text, eol = _load(src, fp.old_name)
         new_text = _apply_hunks(text, fp, fp.old_name)
@@ -397,11 +402,29 @@ async def _apply_patch(inp: dict, *, workspace: Path, instance_id=None, device_t
     for path, new_text, eol, _ in plan:                       # nothing is written until every hunk applied
         _save(path, new_text, eol)
         record_read(path)
-    for path in removals:
-        path.unlink()
+    for path in removals:                                     # moved to the trash, never unlinked (trash.py, contract C3)
+        trash.trash_file(workspace, path, session=toolspec.current_session(), reason="apply_patch: deleted or renamed away")
         _reads.pop((toolspec.current_session(), str(path)), None)
     names = [label for _, _, _, label in plan] + [f"(deleted) {p.name}" for p in removals]
     return f"Patch applied to {len(names)} file(s): " + ", ".join(names)
+
+
+async def _trash_list(inp: dict, *, workspace: Path, instance_id=None, device_tier=None) -> str:
+    rows = trash.items(workspace=workspace)
+    if not rows:
+        return "Nothing this workspace removed is in the trash."
+    return "\n".join(f"{r['id']}  {r['original']}  {r['size']} bytes  {r['days_left']} days left" for r in rows)
+
+
+async def _trash_restore(inp: dict, *, workspace: Path, instance_id=None, device_tier=None) -> str:
+    item_id = inp.get("id")
+    if not isinstance(item_id, str) or not item_id.strip():
+        raise ToolError("id is required (take it from trash_list)")
+    try:
+        res = trash.restore(item_id.strip(), workspace=workspace)
+    except trash.TrashError as exc:
+        raise ToolError(str(exc)) from exc
+    return f"Restored {res['restored']}"
 
 
 # ---- search ---------------------------------------------------------------------
@@ -709,6 +732,17 @@ def register_all() -> None:
         "Apply a unified diff ('--- a/file', '+++ b/file', '@@ -l,c +l,c @@' hunks) to one or more files, "
         "including creating (--- /dev/null) and deleting (+++ /dev/null) files. All or nothing.",
         {"patch": S}, ["patch"]), toolspec.ToolSpec("apply_patch", "write", origin="registered"), code_intel.followup(_apply_patch))
+    toolspec.register(_schema(
+        "trash_list",
+        "List the files this workspace removed (apply_patch deletes and renames) that are still in the trash, newest "
+        "first, with the days left before the owner can purge them.",
+        {}, []),
+        toolspec.ToolSpec("trash_list", "read", read_only=True, concurrency_safe=True, origin="registered"), _trash_list)
+    toolspec.register(_schema(
+        "trash_restore",
+        "Move a trashed file back to the path it was removed from. Refuses if that path exists again.",
+        {"id": S}, ["id"]),
+        toolspec.ToolSpec("trash_restore", "write", origin="registered"), _trash_restore)
     toolspec.register(_schema(
         "grep",
         "Search file contents with a regular expression. output_mode: content (matching lines with line numbers, "
