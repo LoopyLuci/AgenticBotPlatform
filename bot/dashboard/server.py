@@ -735,6 +735,9 @@ def build_app() -> FastAPI:
         # Keep-awake: the thread that holds (or releases) the OS's "don't sleep" request per power.keep_awake.
         from bot import power
         power.keeper.start()
+        # The hardware guard's monitor thread (bot/hwguard/monitor.py): readings, the shared verdict, alerts.
+        from bot.hwguard import monitor as hw_monitor
+        hw_monitor.start()
         ssh_update_task = asyncio.create_task(_ssh_toolkit_auto_update_loop())
         # The unit runtime: load the selected feature-area units (ABP_UNITS / runtime.units); never stops startup.
         from bot.runtime import live as _live
@@ -746,6 +749,7 @@ def build_app() -> FastAPI:
             task.cancel()
             ssh_update_task.cancel()
             power.keeper.stop()
+            hw_monitor.stop()
 
     app = FastAPI(title="Bot Control Dashboard API", lifespan=_lifespan)
 
@@ -984,6 +988,11 @@ def build_app() -> FastAPI:
     from bot.dashboard import capacity_api
 
     capacity_api.register(app, _require_token_or_api_key, _require_token)
+
+    # The hardware guard (/api/hwguard): live health readings, the load governor's verdict, WHEA history, its settings.
+    from bot.dashboard import hwguard_api
+
+    hwguard_api.register(app, _require_token_or_api_key, _require_token)
 
     # Measured VRAM (/api/gpu): total / used / free, and whether a given size fits.
     @app.get("/api/gpu", dependencies=[Depends(_require_token_or_api_key)])

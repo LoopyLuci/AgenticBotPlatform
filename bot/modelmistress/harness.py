@@ -33,7 +33,12 @@ def models(peer: str = "", *, refresh: bool = False) -> list[dict]:
 def load(model: str, **options: Any) -> Any:
     """Load a model (options: ctx_size, gpu_layers, parallel, threads, embeddings, reranking, reload...)."""
     args = {"model": model, **{k: v for k, v in options.items() if v is not None}}
-    return client.call("model.load", args, timeout=900)
+    from bot.hwguard import slot
+
+    # A load fills most of the card and runs the CPU hard for a while: it waits for the heavy-work slot (bot/hwguard), so it
+    # never stacks with a render, a full test run or a build, and never starts while the hardware guard says pause.
+    with slot.heavy("model_load", f"ModelMistress load {model}", wait_s=120):
+        return client.call("model.load", args, timeout=900)
 
 
 def unload(model: str) -> Any:

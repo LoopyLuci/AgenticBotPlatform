@@ -829,6 +829,34 @@ def _check_tests_and_audit(py: str) -> bool:
     return True
 
 
+HW_WAIT_S = float(os.environ.get("ABP_PIPELINE_HW_WAIT_S", "1800"))
+
+
+def _hw_gate(kind: str, want: int, label: str) -> Optional[int]:
+    """Ask the hardware guard (bot/hwguard) before a heavy step: wait (up to HW_WAIT_S) for the machine-wide heavy-work slot
+    and for the governor to leave pause, then cap the workers by the current headroom. None = refused (the step fails, the
+    old bundle keeps running). The slot is held until the pipeline exits, so the build after the tests does not stack with
+    a render or a model load either. A guard that cannot be imported leaves `want` unchanged."""
+    try:
+        from bot.hwguard import governor, slot
+    except Exception as exc:  # noqa: BLE001
+        Step.warn(f"hardware guard unavailable ({exc}); running {want} worker(s) unguarded")
+        return want
+    res = slot.acquire(kind, f"local pipeline: {label}", wait_s=HW_WAIT_S)
+    if not res["granted"]:
+        Step.err(f"hardware guard refused {kind} after {HW_WAIT_S:.0f}s: {res['reason']}")
+        return None
+    if res.get("holder"):
+        import atexit
+        atexit.register(slot.release)
+    got = governor.cap(kind, want)               # returns at once when the guard is off; no reading is taken then
+    if got < want:
+        v = governor.verdict()
+        Step.warn(f"hardware guard ({v['level']}): {kind} workers {want} -> {got}: " + "; ".join(v["reasons"]))
+    _RUN.note(f"hardware guard: {kind} workers {got} of {want}", "info")
+    return max(1, got)
+
+
 def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool, label: str) -> bool:
     """One pytest run (the whole suite when `targets` is empty) with the self-healing flaky re-run.
 
@@ -839,6 +867,10 @@ def _pytest_stage(py: str, targets: list[str], has_dev: bool, *, coverage: bool,
 
     extra: list[str] = []
     workers = testselect.worker_count(len(targets) if targets else None) if has_dev else 0
+    if workers:
+        workers = _hw_gate("pytest", workers, label)
+        if workers is None:
+            return False
     if workers:
         # --max-worker-restart=0: a worker that dies (a native crash) ends the run at once, naming the test it was
         # running, instead of the session waiting out PYTEST_TIMEOUT for a replacement that never finishes.

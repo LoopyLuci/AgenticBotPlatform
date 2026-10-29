@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -43,6 +44,27 @@ logger = logging.getLogger("bot.conductor.run")
 
 Worker = Callable[[dict, str], Awaitable[dict]]
 
+
+
+HW_WAIT_S = 1800.0
+
+
+async def _hw_workers(want: Optional[int]) -> Optional[int]:
+    """The run's parallel workers as the hardware guard allows (bot/hwguard): wait while it says pause (up to HW_WAIT_S,
+    then one worker), then cap by the current headroom. `want` None = the coordination setting."""
+    from bot.hwguard import governor as hw
+
+    if not hw.settings()["govern"].get("factory", True):
+        return want
+    if want is None:
+        from bot import coordination
+        want = int(coordination.settings()["swarm_workers"])
+    deadline = time.monotonic() + HW_WAIT_S
+    while True:
+        got = await asyncio.to_thread(hw.cap, "factory", want)
+        if got > 0 or time.monotonic() >= deadline:
+            return max(1, got)
+        await asyncio.sleep(30)
 
 class Escalated(Blocked):
     """The task needs a decision (Claude or the owner): rejected too often, stuck, or a rule question. The board task goes to
@@ -225,6 +247,7 @@ class Conductor:
             sb.board = self.board
         if self.workers > 0:
             sb.max_workers = self.workers
+        sb.max_workers = await _hw_workers(sb.max_workers)
         results = await sb.run(steps)
         report = RunReport(plan_id=plan.id)
         for t in planner.topo_order(plan.tasks):

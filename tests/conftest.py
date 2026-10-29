@@ -111,6 +111,14 @@ def _no_machine_mm_home(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _hwguard_off_and_isolated(monkeypatch, tmp_path_factory):
+    """The hardware guard (bot/hwguard) reads the machine's live load and WHEA log: no test is slowed or capped by it, and
+    none sees the machine-wide slot. A test about the guard switches it back on itself."""
+    monkeypatch.setenv("ABP_HWGUARD", "off")
+    monkeypatch.setenv("ABP_HWGUARD_DIR", str(tmp_path_factory.mktemp("hwguard")))
+
+
+@pytest.fixture(autouse=True)
 def _no_grok_sign_in(monkeypatch):
     """The model picker lists Grok models from the real `grok models` when grok is installed and signed in: no test may depend
     on that machine state (tests/test_localchat_grok.py keeps the real parser)."""

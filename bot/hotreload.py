@@ -254,6 +254,10 @@ DENYLIST: frozenset[str] = frozenset({
     "bot.agent_runtime.toolkit_tools",
     # Power: power.py holds the keep-awake thread and its holds; power_tools.py registers tools at import time.
     "bot.power", "bot.power_tools", "bot.dashboard.power_api",
+    # Hardware guard: monitor.py holds the sampling thread and its history; the routes register once; governor.py and
+    # slot.py are reached as module attributes but hold nothing live (state is in the shared folder).
+    "bot.hwguard.monitor", "bot.hwguard.governor", "bot.hwguard.slot", "bot.hwguard.sensors", "bot.hwguard.whea",
+    "bot.hwguard.__main__", "bot.dashboard.hwguard_api",
     # Sentinel: netguard.py holds the running DNS filter (a socket and its threads); the routes register once.
     "bot.netguard", "bot.dashboard.netguard_api",
     "bot.nodes", "bot.canvas", "bot.voice", "bot.platforms._relay",
