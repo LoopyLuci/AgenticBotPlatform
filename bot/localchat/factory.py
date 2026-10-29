@@ -178,6 +178,12 @@ async def start(sid: str, plan_id: str, broadcast: Broadcast, *, confirm: bool =
         raise KeyError(sid)
     if running(sid):
         raise FactoryRefused("a Factory run is already going in this session")
+    from bot.hwguard import governor as hw
+
+    hcfg = hw.settings()
+    hv = await asyncio.to_thread(hw.verdict) if hcfg["enabled"] and hcfg["govern"].get("factory", True) else {}
+    if not hv.get("heavy_allowed", True):
+        raise FactoryRefused("the hardware guard has paused heavy work: " + "; ".join(hv.get("reasons") or []))
     raw = cstore.get_plan(plan_id)
     if raw is None:
         raise LookupError(f"no plan {plan_id}")

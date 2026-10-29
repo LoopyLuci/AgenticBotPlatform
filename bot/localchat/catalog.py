@@ -234,7 +234,10 @@ def load(model: str) -> Any:
     """Load `model` on the hub with the hub's own plan (what an on-demand load would use); waits until it is ready."""
     from bot.modelmistress import client
 
-    return client.call("model.load", {"model": model}, timeout=LOAD_TIMEOUT_S)
+    from bot.hwguard import slot
+
+    with slot.heavy("model_load", f"Local Chat load {model}", wait_s=120):     # never stacks with other heavy work (bot/hwguard)
+        return client.call("model.load", {"model": model}, timeout=LOAD_TIMEOUT_S)
 
 
 def get(*, refresh: bool = False, ttl_s: Optional[float] = None) -> dict:

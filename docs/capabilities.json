@@ -3,8 +3,8 @@
  "counts": {
   "action": 102,
   "module": 10,
-  "page": 60,
-  "route": 1113,
+  "page": 61,
+  "route": 1118,
   "setting": 72
  },
  "entries": [
@@ -147,6 +147,16 @@
    "label": "Files",
    "network": false,
    "where": "#files"
+  },
+  {
+   "cloud": false,
+   "desc": "Health & load governor",
+   "id": "page:hardware",
+   "keywords": "hardware health temperature cpu gpu vram ram memory pagefile disk whea machine check crash governor load workers",
+   "kind": "page",
+   "label": "Hardware",
+   "network": false,
+   "where": "#hardware"
   },
   {
    "cloud": true,
@@ -4387,6 +4397,16 @@
    "label": "Api Hotreload Status",
    "network": false,
    "where": "GET /api/hotreload/status"
+  },
+  {
+   "cloud": false,
+   "desc": "API (hwguard)",
+   "id": "route:GET /api/hwguard/state",
+   "keywords": "hwguard",
+   "kind": "route",
+   "label": "Hwguard State",
+   "network": false,
+   "where": "GET /api/hwguard/state"
   },
   {
    "cloud": false,
@@ -9040,6 +9060,36 @@
   },
   {
    "cloud": false,
+   "desc": "API (hwguard)",
+   "id": "route:POST /api/hwguard/ack",
+   "keywords": "hwguard",
+   "kind": "route",
+   "label": "Hwguard Ack",
+   "network": false,
+   "where": "POST /api/hwguard/ack"
+  },
+  {
+   "cloud": false,
+   "desc": "API (hwguard)",
+   "id": "route:POST /api/hwguard/sample",
+   "keywords": "hwguard",
+   "kind": "route",
+   "label": "Hwguard Sample",
+   "network": false,
+   "where": "POST /api/hwguard/sample"
+  },
+  {
+   "cloud": false,
+   "desc": "API (hwguard)",
+   "id": "route:POST /api/hwguard/slot/release",
+   "keywords": "hwguard",
+   "kind": "route",
+   "label": "Hwguard Slot Release",
+   "network": true,
+   "where": "POST /api/hwguard/slot/release"
+  },
+  {
+   "cloud": false,
    "desc": "API (infra)",
    "id": "route:POST /api/infra/peer-access",
    "keywords": "infra",
@@ -12467,6 +12517,16 @@
    "label": "H Settings Put",
    "network": true,
    "where": "PUT /api/hosting/settings"
+  },
+  {
+   "cloud": false,
+   "desc": "API (hwguard)",
+   "id": "route:PUT /api/hwguard/settings",
+   "keywords": "hwguard",
+   "kind": "route",
+   "label": "Hwguard Settings",
+   "network": false,
+   "where": "PUT /api/hwguard/settings"
   },
   {
    "cloud": false,

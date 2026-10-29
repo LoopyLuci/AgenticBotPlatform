@@ -822,6 +822,7 @@
       <a href="#permissions" data-kw="permissions approvals approve deny rules allow ask mode plan bypass mcp pins taint untrusted security"><span class="ic">🛡️</span><span class="nav-txt"><b>Permissions &amp; approvals</b><small>Approvals, rules, MCP pins</small></span></a>
       <a href="#vault" data-kw="vault credentials logins passwords totp two-factor secrets browser agent keys"><span class="ic">🔑</span><span class="nav-txt"><b>Vault</b><small>Logins the browser agent can use</small></span></a>
       <a href="#profiles" data-kw="user profiles model preferences expertise goals learn approve forget export privacy"><span class="ic">👤</span><span class="nav-txt"><b>User profiles</b><small>What the agent learned about people</small></span></a>
+      <a href="#hardware" data-kw="hardware health temperature cpu gpu vram ram memory pagefile disk whea machine check crash governor load workers"><span class="ic">🌡</span><span class="nav-txt"><b>Hardware</b><small>Health &amp; load governor</small></span></a>
       <a href="#power" data-unit="power" data-kw="power sleep keep awake wake on lan wol magic packet remote control linked server"><span class="ic">⏻</span><span class="nav-txt"><b>Power</b><small>Keep awake &amp; wake machines</small></span></a>
       <a href="#netguard" data-unit="netguard" data-kw="sentinel ad block adblock ads trackers dns blocklist hosts firewall rules ports block ip"><span class="ic">🛡</span><span class="nav-txt"><b>Sentinel</b><small>Ad-blocking &amp; firewall</small></span></a>
       <a href="#storage" data-unit="storage" data-kw="storage nas file server unraid parity array disks shares smb webdav backup sync transfer raid smart drive health duplicates cache mover ransomware"><span class="ic">🗄</span><span class="nav-txt"><b>Storage</b><small>File server, parity, backups</small></span></a>
@@ -1968,6 +1969,11 @@
       <div id="ng-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="hardware">
+      <div class="sec-head"><h2>Hardware</h2><span class="desc">This machine's health (CPU, GPU, memory, disks, WHEA hardware errors) and the load governor that caps heavy work by it: test workers, Factory runs, renders, model loads and builds never stack and wait while the machine is hot, short of memory or has just logged a hardware error.</span></div>
+      <div id="hw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="power" data-unit="power">
       <div class="sec-head"><h2>Power</h2><span class="desc">Keep this machine (or a linked server) awake while it is in use, wake sleeping machines with Wake-on-LAN, and choose what linked servers may control here.</span></div>
       <div id="pw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2593,6 +2599,7 @@
 <script src="vmharness-panel.js"></script>
 <script src="hermesmgr-panel.js"></script>
 <script src="power-panel.js"></script>
+<script src="hwguard-panel.js"></script>
 <script src="netguard-panel.js"></script>
 <script src="transferd-panel.js"></script>
 <script src="module-panel.js"></script>

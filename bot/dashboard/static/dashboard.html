@@ -597,6 +597,7 @@
       <a href="#permissions" title="Permissions &amp; approvals"><span class="ic">🛡️</span><span class="nav-txt">Permissions &amp; approvals</span></a>
       <a href="#vault" title="Vault"><span class="ic">🔑</span><span class="nav-txt">Vault</span></a>
       <a href="#profiles" title="User profiles"><span class="ic">👤</span><span class="nav-txt">User profiles</span></a>
+      <a href="#hardware" title="Hardware"><span class="ic">🌡</span><span class="nav-txt">Hardware</span></a>
       <a href="#power" data-unit="power" title="Power"><span class="ic">⏻</span><span class="nav-txt">Power</span></a>
       <a href="#netguard" data-unit="netguard" title="Sentinel"><span class="ic">🛡</span><span class="nav-txt">Sentinel</span></a>
       <a href="#storage" data-unit="storage" title="Storage"><span class="ic">🗄</span><span class="nav-txt">Storage</span></a>
@@ -1575,6 +1576,11 @@
       <div id="ng-root"><p class="cardnote">Connecting to the ABP server…</p></div>
     </section>
 
+    <section id="hardware">
+      <div class="sec-head"><h2>Hardware</h2><span class="desc">This machine's health (CPU, GPU, memory, disks, WHEA hardware errors) and the load governor that caps heavy work by it: test workers, Factory runs, renders, model loads and builds never stack and wait while the machine is hot, short of memory or has just logged a hardware error.</span></div>
+      <div id="hw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
+    </section>
+
     <section id="power" data-unit="power">
       <div class="sec-head"><h2>Power</h2><span class="desc">Keep this machine (or a linked server) awake while it is in use, wake sleeping machines with Wake-on-LAN, and choose what linked servers may control here.</span></div>
       <div id="pw-root"><p class="cardnote">Connecting to the ABP server…</p></div>
@@ -2362,6 +2368,7 @@
 <script src="/static/vmharness-panel.js"></script>
 <script src="/static/hermesmgr-panel.js"></script>
 <script src="/static/power-panel.js"></script>
+<script src="/static/hwguard-panel.js"></script>
 <script src="/static/netguard-panel.js"></script>
 <script src="/static/transferd-panel.js"></script>
 <script src="/static/module-panel.js"></script>

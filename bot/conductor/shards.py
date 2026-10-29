@@ -53,6 +53,11 @@ class Budget:
         by_cpu, by_ram = int(free_cpus), int((free_ram / GB) // per_worker_gb)
         n = max(1, min(int(max_workers), by_cpu, by_ram))
         limit = "max_workers" if n == int(max_workers) and n <= min(by_cpu, by_ram) else ("cpu" if by_cpu <= by_ram else "memory")
+        from bot.hwguard import governor as hw
+
+        guarded = max(1, hw.cap("pytest", n))          # the hardware guard's cap (temperature, WHEA, memory pressure)
+        if guarded < n:
+            n, limit = guarded, "hardware guard"
         return cls(n, cpus, free_cpus, free_ram / GB, limit)
 
 

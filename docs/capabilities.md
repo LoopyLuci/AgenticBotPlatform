@@ -4,9 +4,9 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 
 | Kind | Count |
 |---|---|
-| page | 60 |
+| page | 61 |
 | action | 102 |
-| route | 1113 |
+| route | 1118 |
 | module | 10 |
 | setting | 72 |
 
@@ -28,6 +28,7 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 | Diagnostics | Crash reports, telemetry & support bundle | `#diagnostics` |  |
 | Evals | Agent eval results | `#evals` |  |
 | Files |  | `#files` |  |
+| Hardware | Health & load governor | `#hardware` |  |
 | Hermes Manager | Manage the Hermes agent | `#hermes-manager` | net cloud |
 | Hosting | Websites, domains, DNS, deploys | `#hosting` | net cloud |
 | Infra Automation | Rules for containers, VMs, Tailscale | `#infra-rules` | net |
@@ -808,6 +809,14 @@ Everything ABP can do, generated from the sources by `python scripts/gen_capabil
 
 - `GET /api/hotreload/status` Api Hotreload Status
 - `POST /api/hotreload/run` Api Hotreload Run
+
+### hwguard (5)
+
+- `GET /api/hwguard/state` Hwguard State
+- `POST /api/hwguard/ack` Hwguard Ack
+- `POST /api/hwguard/sample` Hwguard Sample
+- `POST /api/hwguard/slot/release` Hwguard Slot Release
+- `PUT /api/hwguard/settings` Hwguard Settings
 
 ### index.html (1)
 

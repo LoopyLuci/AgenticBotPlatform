@@ -2444,6 +2444,13 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "GET /api/hwguard/state": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hwguard/state",
+  "path_params": [],
+  "query_params": []
+ },
  "GET /api/infra/hosts": {
   "body": false,
   "method": "GET",
@@ -6242,6 +6249,27 @@ export const operations = {
   "path_params": [],
   "query_params": []
  },
+ "POST /api/hwguard/ack": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hwguard/ack",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hwguard/sample": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hwguard/sample",
+  "path_params": [],
+  "query_params": []
+ },
+ "POST /api/hwguard/slot/release": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hwguard/slot/release",
+  "path_params": [],
+  "query_params": []
+ },
  "POST /api/infra/peer-access": {
   "body": true,
   "method": "POST",
@@ -8911,6 +8939,13 @@ export const operations = {
   "body": true,
   "method": "PUT",
   "path": "/api/hosting/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "PUT /api/hwguard/settings": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hwguard/settings",
   "path_params": [],
   "query_params": []
  },
@@ -14459,6 +14494,41 @@ export const operations = {
   "body": false,
   "method": "GET",
   "path": "/api/vms/hyperv-switches",
+  "path_params": [],
+  "query_params": []
+ },
+ "hwguard_ack_api_hwguard_ack_post": {
+  "body": true,
+  "method": "POST",
+  "path": "/api/hwguard/ack",
+  "path_params": [],
+  "query_params": []
+ },
+ "hwguard_sample_api_hwguard_sample_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hwguard/sample",
+  "path_params": [],
+  "query_params": []
+ },
+ "hwguard_settings_api_hwguard_settings_put": {
+  "body": true,
+  "method": "PUT",
+  "path": "/api/hwguard/settings",
+  "path_params": [],
+  "query_params": []
+ },
+ "hwguard_slot_release_api_hwguard_slot_release_post": {
+  "body": false,
+  "method": "POST",
+  "path": "/api/hwguard/slot/release",
+  "path_params": [],
+  "query_params": []
+ },
+ "hwguard_state_api_hwguard_state_get": {
+  "body": false,
+  "method": "GET",
+  "path": "/api/hwguard/state",
   "path_params": [],
   "query_params": []
  },

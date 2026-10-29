@@ -281,7 +281,22 @@ def _fits(need_gb: float) -> Optional[bool]:
 
 def default_gate(j: dict, wf: dict) -> Callable[[], None]:
     """Take the GPU lock and make room in VRAM; returns release() (which reloads what was unloaded). Raises Wait."""
-    release_board = _board_take(float(j["timeout_s"]) + 600.0)
+    import os
+    import uuid
+
+    from bot.hwguard import slot
+
+    # The hardware guard's heavy-work slot (bot/hwguard): a render never stacks with a model load, a full test run or a
+    # build, and never starts while the guard says pause. Released before the unloaded models are loaded back.
+    hw_token = f"{os.getpid()}:{uuid.uuid4().hex[:12]}"
+    hw = slot.acquire("render", f"video job {j['id']}", token=hw_token)
+    if not hw["granted"]:
+        raise Wait(f"hardware guard: {hw['reason']}")
+    try:
+        release_board = _board_take(float(j["timeout_s"]) + 600.0)
+    except BaseException:
+        slot.release(token=hw_token)
+        raise
     unloaded: list[str] = []
     try:
         need = float(wf.get("vram_gb") or 0)
@@ -295,11 +310,13 @@ def default_gate(j: dict, wf: dict) -> Callable[[], None]:
             raise Wait(f"not enough free VRAM for {need:g} GB" + ("" if settings()["unload_mm"] else
                                                                    " (unloading ModelMistress models is off)"))
     except BaseException:
+        slot.release(token=hw_token)
         _restore(unloaded, j["id"])
         release_board()
         raise
 
     def release() -> None:
+        slot.release(token=hw_token)
         try:
             _restore(unloaded, j["id"])
         finally:
