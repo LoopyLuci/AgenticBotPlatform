@@ -22,6 +22,7 @@ every SQLite integrity_check, and every recorded row count. It never touches the
     python -m bot.state_backup drill --repo <folder>     [--password-env ...]
     python -m bot.state_backup status
     python -m bot.state_backup plain --dest <folder>     (no password: an unencrypted copy, see plain_copy)
+    python -m bot.state_backup prune --dest <folder> [--dry-run]   (the plain copies' keep rules, see prune_plain_copies)
 
 The repository password is never stored. Without the environment variable it is asked for at the terminal.
 
@@ -35,6 +36,7 @@ import argparse
 import getpass
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -55,6 +57,12 @@ SKIP_DIRS = frozenset({"snapshots", "state_backup", "trash", "checkpoint_store",
 # The databases every ABP install has, relative to the data folder. Anything else found under data is "unlisted".
 KNOWN_DBS = ("bot.db", "storage_tiering.db", "context_vault/index.db")
 DEFAULT_PASSWORD_ENV = "ABP_STATE_BACKUP_PASSWORD"
+# How many plain copies the owner keeps: the newest per day, ISO week and month (grandfather-father-son), see prune_plain_copies.
+KEEP_DAILY, KEEP_WEEKLY, KEEP_MONTHLY = 7, 4, 6
+KEEP_SETTINGS = (("keep_daily", KEEP_DAILY), ("keep_weekly", KEEP_WEEKLY), ("keep_monthly", KEEP_MONTHLY))
+MAX_KEEP = 999
+PLAIN_NAME = re.compile(r"plain-(\d{8}T\d{6}Z)(?:-[A-Za-z0-9_.-]+)?")      # a plain copy's folder name: UTC time, optional suffix
+logger = logging.getLogger("bot.state_backup")
 
 Log = Callable[[str], None]
 
@@ -420,6 +428,14 @@ def _refresh_manifest(dest: Path) -> None:
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
+def _mark_verified(dest: Path) -> None:
+    """Record in the manifest that the copy passed its check. prune_plain_copies keeps the newest copy with this record."""
+    path = dest / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["verified"] = {"at": _now(), "ok": True}
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
 def _leak_check(dest: Path, values: set[bytes]) -> dict:
     """Which copied files still hold a live credential value or a key-shaped string. Names only, never the text."""
     checked = [v for v in values if len(v) >= MIN_SECRET_LEN]
@@ -472,6 +488,7 @@ def plain_copy(*, dest_root: Path, data: Path, project_root: Path, private_dir: 
                 f"the plain copy failed its check and was removed: credential values in "
                 f"{check['files_with_a_credential'] or 'none'}; key-shaped text in "
                 f"{check['files_with_key_shaped_text'] or 'none'}; verify ok={report['ok']}")
+        _mark_verified(dest)
     except Exception:
         shutil.rmtree(dest, ignore_errors=True)
         raise
@@ -503,7 +520,7 @@ def _schedule_path() -> Path:
 
 
 def schedule() -> dict:
-    """The daily plain copy: off until the owner turns it on, and the folder it writes to."""
+    """The daily plain copy: off until the owner turns it on, the folder it writes to, and how many copies to keep."""
     path = _schedule_path()
     stored: dict = {}
     if path.is_file():
@@ -511,18 +528,39 @@ def schedule() -> dict:
             stored = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             stored = {}
-    return {"enabled": bool(stored.get("enabled", False)), "dest": str(stored.get("dest") or "")}
+    keeps = {name: _stored_keep(stored, name, default) for name, default in KEEP_SETTINGS}
+    return {"enabled": bool(stored.get("enabled", False)), "dest": str(stored.get("dest") or ""), **keeps}
 
 
-def set_schedule(*, enabled: bool, dest: str) -> dict:
+def _check_keep(name: str, value) -> int:
+    """A copy count from the owner: a whole number. At least one daily copy, so the newest copy is always kept."""
+    minimum = 1 if name == "keep_daily" else 0
+    if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= MAX_KEEP:
+        raise StateBackupError(f"{name} must be a whole number from {minimum} to {MAX_KEEP}")
+    return value
+
+
+def _stored_keep(stored: dict, name: str, default: int) -> int:
+    try:
+        return _check_keep(name, stored.get(name, default))
+    except StateBackupError:
+        return default
+
+
+def set_schedule(*, enabled: bool, dest: str, keep_daily: Optional[int] = None, keep_weekly: Optional[int] = None,
+                 keep_monthly: Optional[int] = None) -> dict:
+    """Save the schedule. A keep count left as None keeps the value already stored."""
     dest = (dest or "").strip()
     if dest:
         check_destination(Path(dest))
     if enabled and not dest:
         raise StateBackupError("choose the folder the daily copy goes to before turning it on")
+    current = schedule()
+    wanted = {"keep_daily": keep_daily, "keep_weekly": keep_weekly, "keep_monthly": keep_monthly}
+    keeps = {name: _check_keep(name, current[name] if value is None else value) for name, value in wanted.items()}
     path = _schedule_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"enabled": bool(enabled), "dest": dest}, indent=2), encoding="utf-8")
+    path.write_text(json.dumps({"enabled": bool(enabled), "dest": dest, **keeps}, indent=2), encoding="utf-8")
     return schedule()
 
 
@@ -532,6 +570,83 @@ def run_scheduled() -> dict:
     if not sched["enabled"]:
         raise StateBackupError("the daily plain copy is off")
     return run_plain(Path(sched["dest"]))
+
+
+# ---- prune: the owner's keep rules for the plain copies (grandfather-father-son) ---------------------------------------
+def _is_verified(folder: Path) -> bool:
+    """True when the copy's manifest carries the record plain_copy writes after its check passed. No record: unverified."""
+    try:
+        record = json.loads((folder / "manifest.json").read_text(encoding="utf-8")).get("verified")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return False
+    return isinstance(record, dict) and record.get("ok") is True
+
+
+def _plain_copies(root: Path) -> list[tuple[datetime, Path]]:
+    """The plain copies in root, newest first, by the UTC time in their names. Anything else in root is not a copy."""
+    found = []
+    if not root.is_dir():
+        return found
+    for path in root.iterdir():
+        match = PLAIN_NAME.fullmatch(path.name)
+        if not match or path.is_symlink() or not path.is_dir():
+            continue
+        try:
+            when = datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        found.append((when, path))
+    return sorted(found, key=lambda item: (item[0], item[1].name), reverse=True)
+
+
+def _keep_newest_per(copies: list[tuple[datetime, Path]], bucket: Callable[[datetime], object], count: int, label: str,
+                     reasons: dict[str, list[str]]) -> None:
+    """Keep the newest copy of each of the `count` most recent buckets (days, ISO weeks, months) that hold a copy."""
+    newest: dict = {}
+    for when, path in copies:                       # newest first, so the first copy seen in a bucket is its newest
+        newest.setdefault(bucket(when), path)
+    for key in sorted(newest, reverse=True)[:count]:
+        reasons.setdefault(newest[key].name, []).append(label)
+
+
+def prune_plain_copies(root: Path, *, daily: int = KEEP_DAILY, weekly: int = KEEP_WEEKLY, monthly: int = KEEP_MONTHLY,
+                       dry_run: bool = False) -> dict:
+    """Delete the plain copies in root that no keep rule holds. Returns what is kept and what was removed.
+
+    Kept: the newest copy of each of the last `daily` days, `weekly` ISO weeks and `monthly` months that hold a copy (a
+    day, week or month with no copy does not count), and the newest copy that passed its check (a copy with no record of
+    passing is unverified). A copy any rule keeps is kept. Only folders named like a plain copy are candidates; nothing
+    else in root is touched. The keep set is computed before anything is deleted, and each removal is logged. dry_run
+    returns the same lists and deletes nothing."""
+    check_destination(root)
+    daily = _check_keep("keep_daily", daily)
+    weekly = _check_keep("keep_weekly", weekly)
+    monthly = _check_keep("keep_monthly", monthly)
+    copies = _plain_copies(root)
+    reasons: dict[str, list[str]] = {}
+    _keep_newest_per(copies, lambda when: when.date(), daily, "daily", reasons)
+    _keep_newest_per(copies, lambda when: when.isocalendar()[:2], weekly, "weekly", reasons)
+    _keep_newest_per(copies, lambda when: (when.year, when.month), monthly, "monthly", reasons)
+    newest_verified = next((path for _, path in copies if _is_verified(path)), None)
+    if newest_verified is not None:
+        reasons.setdefault(newest_verified.name, []).append("newest verified")
+    kept = [path.name for _, path in copies if path.name in reasons]
+    doomed = [path for _, path in copies if path.name not in reasons]
+    removed, failed = [], []
+    for path in doomed:
+        if dry_run:
+            removed.append(path.name)
+            continue
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            failed.append(path.name)
+            logger.warning("could not remove plain state copy %s: %s", path, exc)
+            continue
+        removed.append(path.name)
+        logger.info("removed plain state copy %s (no keep rule holds it)", path)
+    return {"root": str(root), "dry_run": dry_run, "kept": kept, "removed": removed, "failed": failed,
+            "reasons": reasons, "ok": not failed}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -544,6 +659,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("status", help="when the last backup and drill ran")
     plain = sub.add_parser("plain", help="an unencrypted copy with no live credential in it, checked before it is kept")
     plain.add_argument("--dest", type=Path, required=True, help="the folder to put the copy in (another drive, not C:)")
+    prune = sub.add_parser("prune", help="delete the plain copies no keep rule holds (the newest verified copy is kept)")
+    prune.add_argument("--dest", type=Path, required=True, help="the folder the plain copies are in (another drive, not C:)")
+    prune.add_argument("--dry-run", action="store_true", help="list what would be removed and delete nothing")
     args = parser.parse_args(argv)
     data, project, private, tiers = _defaults()
     try:
@@ -552,6 +670,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         elif args.cmd == "plain":
             result = plain_copy(dest_root=args.dest, data=data, project_root=project, private_dir=private,
                                 tier_dirs=tiers, log=lambda m: print(m, file=sys.stderr))
+        elif args.cmd == "prune":
+            keeps = schedule()
+            result = prune_plain_copies(args.dest, daily=keeps["keep_daily"], weekly=keeps["keep_weekly"],
+                                        monthly=keeps["keep_monthly"], dry_run=args.dry_run)
         else:
             if args.cmd == "drill" and not (args.repo / "config.json").exists():
                 raise StateBackupError(f"{args.repo} is not a backup repository yet (run a state backup first)")

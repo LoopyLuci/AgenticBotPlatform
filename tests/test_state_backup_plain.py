@@ -112,10 +112,12 @@ def point_at(monkeypatch, data: Path, root: Path) -> None:
 def test_the_schedule_is_off_until_the_owner_turns_it_on(live, monkeypatch, tmp_path):
     root, data = live
     point_at(monkeypatch, data, root)
-    assert sb.schedule() == {"enabled": False, "dest": ""}
+    off = {"enabled": False, "dest": "", "keep_daily": 7, "keep_weekly": 4, "keep_monthly": 6}
+    assert sb.schedule() == off
     with pytest.raises(sb.StateBackupError, match="choose the folder"):
         sb.set_schedule(enabled=True, dest="")
-    assert sb.set_schedule(enabled=True, dest=str(tmp_path / "copies")) == {"enabled": True, "dest": str(tmp_path / "copies")}
+    assert sb.set_schedule(enabled=True, dest=str(tmp_path / "copies")) == {
+        "enabled": True, "dest": str(tmp_path / "copies"), "keep_daily": 7, "keep_weekly": 4, "keep_monthly": 6}
     sb.set_schedule(enabled=False, dest=str(tmp_path / "copies"))
     with pytest.raises(sb.StateBackupError, match="off"):
         sb.run_scheduled()
@@ -146,10 +148,30 @@ def test_the_daily_pass_writes_the_copy_when_on(monkeypatch):
 
     from bot import retention
     ran = []
-    monkeypatch.setattr(sb, "schedule", lambda: {"enabled": True, "dest": "/ws/owner-copies"})
+    pruned = []
+    keeps = {"keep_daily": 5, "keep_weekly": 2, "keep_monthly": 3}
+    monkeypatch.setattr(sb, "schedule", lambda: {"enabled": True, "dest": "/ws/owner-copies", **keeps})
     monkeypatch.setattr(sb, "run_scheduled", lambda: ran.append(1) or {"copy": "x", "databases": 1})
+    monkeypatch.setattr(sb, "prune_plain_copies", lambda root, **kw: pruned.append((root, kw)) or {"kept": [], "removed": [], "failed": []})
     asyncio.run(retention.run_state_backup_once())
     assert ran == [1]
+    assert pruned == [(Path("/ws/owner-copies"), {"daily": 5, "weekly": 2, "monthly": 3})]
+
+
+def test_the_daily_pass_does_not_prune_after_a_copy_that_failed(monkeypatch):
+    import asyncio
+
+    from bot import retention
+    pruned = []
+    monkeypatch.setattr(sb, "schedule", lambda: {"enabled": True, "dest": "/ws/owner-copies", "keep_daily": 7,
+                                                  "keep_weekly": 4, "keep_monthly": 6})
+
+    def refused():
+        raise sb.StateBackupError("the plain copy failed its check and was removed")
+    monkeypatch.setattr(sb, "run_scheduled", refused)
+    monkeypatch.setattr(sb, "prune_plain_copies", lambda root, **kw: pruned.append(root))
+    asyncio.run(retention.run_state_backup_once())
+    assert pruned == []
 
 
 def test_the_recovery_api_schedules_and_copies_with_the_owner_token_only(live, monkeypatch, tmp_path):
@@ -169,7 +191,8 @@ def test_the_recovery_api_schedules_and_copies_with_the_owner_token_only(live, m
     owner = {"X-Dashboard-Token": "owner-token"}
     dest = str(tmp_path / "copies")
 
-    assert c.get("/api/fileserver/recovery").json()["schedule"] == {"enabled": False, "dest": ""}
+    assert c.get("/api/fileserver/recovery").json()["schedule"]["enabled"] is False
+    assert c.get("/api/fileserver/recovery").json()["schedule"]["keep_daily"] == 7
     assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": dest}).status_code == 403
     assert c.put("/api/fileserver/recovery/schedule", json={"enabled": True, "dest": dest}, headers=owner).status_code == 200
     assert c.get("/api/fileserver/recovery").json()["schedule"]["enabled"] is True

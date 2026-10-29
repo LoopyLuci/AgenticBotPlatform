@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from bot.config import config
 from bot import db
@@ -60,18 +61,31 @@ async def run_once() -> None:
 
 async def run_state_backup_once() -> None:
     """The daily plain state copy, when the owner has turned it on (bot/state_backup.py schedule). It runs in a
-    thread: it reads and copies databases. A failed copy is logged; it never stops the loop."""
+    thread: it reads and copies databases. A failed copy is logged; it never stops the loop. After a copy that
+    succeeds, the copies in the schedule's folder are pruned to the owner's keep counts."""
     from bot import state_backup
 
-    if not state_backup.schedule()["enabled"]:
+    sched = state_backup.schedule()
+    if not sched["enabled"]:
         return
     try:
         summary = await asyncio.to_thread(state_backup.run_scheduled)
         logger.info("daily plain state copy written to %s (%d database(s))", summary["copy"], summary["databases"])
     except state_backup.StateBackupError as exc:
         logger.warning("daily plain state copy refused: %s", exc)
+        return
     except Exception:
         logger.exception("daily plain state copy failed")
+        return
+    try:
+        pruned = await asyncio.to_thread(state_backup.prune_plain_copies, Path(sched["dest"]), daily=sched["keep_daily"],
+                                         weekly=sched["keep_weekly"], monthly=sched["keep_monthly"])
+        logger.info("plain state copies pruned: %d kept, %d removed, %d failed", len(pruned["kept"]),
+                    len(pruned["removed"]), len(pruned["failed"]))
+    except state_backup.StateBackupError as exc:
+        logger.warning("plain state copies not pruned: %s", exc)
+    except Exception:
+        logger.exception("pruning the plain state copies failed")
 
 
 async def run_forever(stop_event: asyncio.Event) -> None:

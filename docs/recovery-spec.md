@@ -85,3 +85,10 @@ A plain copy is an unencrypted folder on the owner's own disk. It is not a repos
 - `config/` and `private/config/` are excluded, because they hold API keys. Unlisted `*.db` files are copied under
   `unlisted/` and scrubbed the same way.
 - The daily schedule is off by default (`PUT /api/fileserver/recovery/schedule`). When it is on, a daily pass runs the copy.
+- A passed copy is recorded in its `manifest.json` (`"verified": {"at", "ok": true}`). A copy with no such record, from before
+  that record existed, counts as unverified.
+- Pruning (`python -m bot.state_backup prune --dest <folder> [--dry-run]`, and after each successful daily copy). It keeps the
+  newest copy of each of the last `keep_daily` (7) days, `keep_weekly` (4) ISO weeks and `keep_monthly` (6) months that hold
+  a copy, and always the newest copy that passed its check. Only folders named `plain-<UTC time>[-suffix]` are candidates.
+  The keep set is computed before anything is removed, and each removal is logged. The counts are set on the Recovery tab
+  (`keep_daily`, `keep_weekly`, `keep_monthly` in the schedule request).

@@ -25,8 +25,9 @@
                                                    POST /tiering/apply | /tiering/recall {path}  (dashboard token only)
     GET    /api/fileserver/recovery                trash (what agents removed), retention, the state backup's last run and drill
                                                    POST /recovery/trash/restore | /trash/purge {id}  (dashboard token only)
-                                                   PUT /recovery/schedule {enabled, dest}; POST /recovery/plain-copy {dest} -> a run
-                                                   (the daily plain state copy and its folder; dashboard token only)
+                                                   PUT /recovery/schedule {enabled, dest, keep_daily, keep_weekly, keep_monthly}; POST
+                                                   /recovery/plain-copy {dest} -> a run (the daily plain state copy, its folder and
+                                                   how many copies to keep; dashboard token only)
 """
 from __future__ import annotations
 
@@ -344,7 +345,8 @@ def register(app: FastAPI, require_token: Callable) -> None:
     async def fs_schedule_set(body: dict = Body(...)):
         try:
             return await asyncio.to_thread(state_backup.set_schedule, enabled=bool(body.get("enabled")),
-                                           dest=str(body.get("dest") or ""))
+                                           dest=str(body.get("dest") or ""), keep_daily=body.get("keep_daily"),
+                                           keep_weekly=body.get("keep_weekly"), keep_monthly=body.get("keep_monthly"))
         except state_backup.StateBackupError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
